@@ -52,7 +52,7 @@ const PolicyDetail = () => {
         .select(`
           *,
           created_by_profile:profiles!policies_created_by_fkey(full_name),
-          policy_versions(*)
+          policy_versions!policy_versions_policy_id_fkey(*)
         `)
         .eq("id", id)
         .single();
