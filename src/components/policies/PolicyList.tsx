@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -8,6 +9,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 
 const PolicyList = () => {
+  const navigate = useNavigate();
   const [policies, setPolicies] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [userRole, setUserRole] = useState<string>("");
@@ -101,22 +103,14 @@ const PolicyList = () => {
                 {policy.category && <p>Category: {policy.category}</p>}
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" size="sm">
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => navigate(`/dashboard/policies/${policy.id}`)}
+                >
                   <Eye className="h-4 w-4 mr-1" />
                   View
                 </Button>
-                {(userRole === "admin" || userRole === "publisher") && (
-                  <>
-                    <Button variant="outline" size="sm">
-                      <Edit className="h-4 w-4 mr-1" />
-                      Edit
-                    </Button>
-                    <Button variant="outline" size="sm">
-                      <Users className="h-4 w-4 mr-1" />
-                      Assign
-                    </Button>
-                  </>
-                )}
               </div>
             </div>
           </CardContent>
