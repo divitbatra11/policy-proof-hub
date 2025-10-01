@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { ArrowRight, CheckCircle } from "lucide-react";
+import { Link } from "react-router-dom";
 
 const benefits = [
   "99.9% uptime guarantee",
@@ -34,21 +35,25 @@ const CTA = () => {
           </div>
           
           <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
-            <Button 
-              size="lg" 
-              variant="secondary" 
-              className="text-lg group bg-white text-primary hover:bg-white/90"
-            >
-              Start Free Trial
-              <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
-            </Button>
-            <Button 
-              size="lg" 
-              variant="outline" 
-              className="text-lg border-2 border-white text-white hover:bg-white/10"
-            >
-              Request Demo
-            </Button>
+            <Link to="/auth">
+              <Button 
+                size="lg" 
+                variant="secondary" 
+                className="text-lg group bg-white text-primary hover:bg-white/90"
+              >
+                Get Started Free
+                <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
+              </Button>
+            </Link>
+            <Link to="/auth">
+              <Button 
+                size="lg" 
+                variant="outline" 
+                className="text-lg border-2 border-white text-white hover:bg-white/10"
+              >
+                Sign In
+              </Button>
+            </Link>
           </div>
           
           <p className="text-sm opacity-75">

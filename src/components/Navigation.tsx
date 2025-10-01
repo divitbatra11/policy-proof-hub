@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Shield } from "lucide-react";
+import { Link } from "react-router-dom";
 
 const Navigation = () => {
   return (
@@ -27,12 +28,16 @@ const Navigation = () => {
           </div>
           
           <div className="flex items-center gap-3">
-            <Button variant="ghost" className="font-medium">
-              Sign In
-            </Button>
-            <Button className="font-medium">
-              Get Started
-            </Button>
+            <Link to="/auth">
+              <Button variant="ghost" className="font-medium">
+                Sign In
+              </Button>
+            </Link>
+            <Link to="/auth">
+              <Button className="font-medium">
+                Get Started
+              </Button>
+            </Link>
           </div>
         </div>
       </div>
