@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,6 +22,37 @@ const PolicyEdit = ({ policy, onSave }: PolicyEditProps) => {
   const [file, setFile] = useState<File | null>(null);
   const [changeSummary, setChangeSummary] = useState("");
   const [loading, setLoading] = useState(false);
+  const [fileUrl, setFileUrl] = useState<string>("");
+
+  const currentVersion = policy.policy_versions?.find((v: any) => v.id === policy.current_version_id);
+
+  useEffect(() => {
+    const getSignedUrl = async () => {
+      if (!currentVersion?.file_url) return;
+      
+      // Extract the file path from the full URL
+      const urlParts = currentVersion.file_url.split('/policy-documents/');
+      if (urlParts.length < 2) return;
+      
+      const filePath = urlParts[1];
+      
+      const { data, error } = await supabase.storage
+        .from('policy-documents')
+        .createSignedUrl(filePath, 3600); // 1 hour expiry
+      
+      if (error) {
+        console.error('Error getting signed URL:', error);
+        toast.error('Failed to load policy document');
+        return;
+      }
+      
+      if (data?.signedUrl) {
+        setFileUrl(data.signedUrl);
+      }
+    };
+    
+    getSignedUrl();
+  }, [currentVersion]);
 
   const handleSave = async () => {
     setLoading(true);
@@ -48,9 +79,11 @@ const PolicyEdit = ({ policy, onSave }: PolicyEditProps) => {
 
         if (uploadError) throw uploadError;
 
-        const { data: { publicUrl } } = supabase.storage
+        const { data: urlData } = await supabase.storage
           .from("policy-documents")
-          .getPublicUrl(fileName);
+          .createSignedUrl(fileName, 31536000); // 1 year expiry for stored URLs
+        
+        const publicUrl = urlData?.signedUrl || "";
 
         // Get current max version number
         const { data: versions } = await supabase
@@ -200,17 +233,19 @@ const PolicyEdit = ({ policy, onSave }: PolicyEditProps) => {
             <CardTitle className="text-lg">Document Editor</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {policy.policy_versions?.find((v: any) => v.id === policy.current_version_id)?.file_url && (
+            {fileUrl ? (
               <div className="border rounded-lg overflow-hidden bg-background">
                 <iframe
-                  src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(
-                    policy.policy_versions.find((v: any) => v.id === policy.current_version_id).file_url
-                  )}`}
+                  src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(fileUrl)}`}
                   className="w-full h-[700px]"
                   title="Document Editor"
                 />
               </div>
-            )}
+            ) : currentVersion ? (
+              <div className="w-full h-[700px] flex items-center justify-center border rounded-lg">
+                <p className="text-muted-foreground">Loading document...</p>
+              </div>
+            ) : null}
             
             <div className="space-y-4 p-4 border rounded-lg bg-muted/50">
               <h4 className="font-medium">Upload New Version</h4>

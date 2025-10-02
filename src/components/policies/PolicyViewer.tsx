@@ -5,15 +5,46 @@ import { FileText, Download, Calendar, User } from "lucide-react";
 import { format } from "date-fns";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { useState, useEffect } from "react";
 
 interface PolicyViewerProps {
   policy: any;
 }
 
 const PolicyViewer = ({ policy }: PolicyViewerProps) => {
+  const [fileUrl, setFileUrl] = useState<string>("");
+  
   const currentVersion = policy.policy_versions?.find(
     (v: any) => v.id === policy.current_version_id
   );
+
+  useEffect(() => {
+    const getSignedUrl = async () => {
+      if (!currentVersion?.file_url) return;
+      
+      // Extract the file path from the full URL
+      const urlParts = currentVersion.file_url.split('/policy-documents/');
+      if (urlParts.length < 2) return;
+      
+      const filePath = urlParts[1];
+      
+      const { data, error } = await supabase.storage
+        .from('policy-documents')
+        .createSignedUrl(filePath, 3600); // 1 hour expiry
+      
+      if (error) {
+        console.error('Error getting signed URL:', error);
+        toast.error('Failed to load policy document');
+        return;
+      }
+      
+      if (data?.signedUrl) {
+        setFileUrl(data.signedUrl);
+      }
+    };
+    
+    getSignedUrl();
+  }, [currentVersion]);
 
   const handleDownload = async (fileUrl: string, fileName: string) => {
     try {
@@ -113,11 +144,17 @@ const PolicyViewer = ({ policy }: PolicyViewerProps) => {
                   
                   {/* PDF Viewer */}
                   <div className="border rounded-lg overflow-hidden bg-background">
-                    <iframe
-                      src={currentVersion.file_url}
-                      className="w-full h-[800px]"
-                      title="Policy Document Viewer"
-                    />
+                    {fileUrl ? (
+                      <iframe
+                        src={fileUrl}
+                        className="w-full h-[800px]"
+                        title="Policy Document Viewer"
+                      />
+                    ) : (
+                      <div className="w-full h-[800px] flex items-center justify-center">
+                        <p className="text-muted-foreground">Loading document...</p>
+                      </div>
+                    )}
                   </div>
                 </div>
                 
