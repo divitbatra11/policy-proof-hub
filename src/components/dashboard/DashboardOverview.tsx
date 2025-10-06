@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { FileText, Users, CheckCircle, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
+import PendingAttestationsWidget from "./PendingAttestationsWidget";
 
 const DashboardOverview = () => {
   const [stats, setStats] = useState({
@@ -138,6 +139,8 @@ const DashboardOverview = () => {
           </div>
         </CardContent>
       </Card>
+
+      <PendingAttestationsWidget />
     </div>
   );
 };

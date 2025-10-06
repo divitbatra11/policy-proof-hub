@@ -12,6 +12,7 @@ import Groups from "./pages/Groups";
 import Settings from "./pages/Settings";
 import NotFound from "./pages/NotFound";
 import UploadPolicyDocs from "./pages/UploadPolicyDocs";
+import PendingAttestations from "./pages/PendingAttestations";
 
 const queryClient = new QueryClient();
 
@@ -27,6 +28,7 @@ const App = () => (
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/dashboard/policies" element={<Policies />} />
           <Route path="/dashboard/policies/:id" element={<PolicyDetail />} />
+          <Route path="/dashboard/attestations" element={<PendingAttestations />} />
           <Route path="/dashboard/groups" element={<Groups />} />
           <Route path="/dashboard/settings" element={<Settings />} />
           <Route path="/upload-docs" element={<UploadPolicyDocs />} />
