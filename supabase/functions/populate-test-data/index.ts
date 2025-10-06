@@ -97,20 +97,38 @@ Deno.serve(async (req) => {
           const password = 'Demo123!'
           const fullName = `${group.name} User ${i + 1}`
           
-          // Create promise for each user creation
-          const userPromise = supabaseAdmin.auth.admin.createUser({
-            email,
-            password,
-            email_confirm: true,
-            user_metadata: {
-              full_name: fullName
+          // Create promise for each user creation or retrieval
+          const userPromise = (async () => {
+            // First check if user already exists
+            const { data: existingUser } = await supabaseAdmin.auth.admin.listUsers()
+            const existing = existingUser?.users.find(u => u.email === email)
+            
+            if (existing) {
+              console.log(`User ${email} already exists, using existing user...`)
+              // Update profile to ensure it's up to date
+              await supabaseAdmin
+                .from('profiles')
+                .upsert({
+                  id: existing.id,
+                  email: email,
+                  full_name: fullName,
+                  department: group.name,
+                  role: group.name === 'Admin' ? 'admin' : 'employee'
+                }, { onConflict: 'id' })
+              return existing.id
             }
-          }).then(async ({ data: authData, error: authError }) => {
-            if (authError) {
-              if (authError.message?.includes('already been registered')) {
-                console.log(`User ${email} already exists, skipping...`)
-                return null
+
+            // Create new user if doesn't exist
+            const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+              email,
+              password,
+              email_confirm: true,
+              user_metadata: {
+                full_name: fullName
               }
+            })
+
+            if (authError) {
               console.error(`Error creating user ${email}:`, authError)
               return null
             }
@@ -129,7 +147,7 @@ Deno.serve(async (req) => {
               }, { onConflict: 'id' })
 
             return userId
-          })
+          })()
 
           batchPromises.push(userPromise)
         }
