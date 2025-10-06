@@ -53,25 +53,50 @@ Deno.serve(async (req) => {
     // 1. Delete existing test data
     console.log('Cleaning up existing test data...')
     
-    // Delete existing groups and their members
+    // Get all test users first
+    const { data: { users: allUsers } } = await supabaseAdmin.auth.admin.listUsers()
+    const testUserIds: string[] = []
+    
+    if (allUsers) {
+      for (const user of allUsers) {
+        if (user.email?.includes('@apex-demo.com')) {
+          testUserIds.push(user.id)
+        }
+      }
+    }
+
+    console.log(`Found ${testUserIds.length} existing test users to delete`)
+
+    // Delete policies created by test users
+    if (testUserIds.length > 0) {
+      const { error: deletePoliciesError } = await supabaseAdmin
+        .from('policies')
+        .delete()
+        .in('created_by', testUserIds)
+      
+      if (deletePoliciesError) console.log('Note: Error deleting policies:', deletePoliciesError.message)
+    }
+    
+    // Delete existing test groups
     const { error: deleteGroupsError } = await supabaseAdmin
       .from('groups')
       .delete()
       .in('name', ['Admin', 'Directors', 'Executive Directors', 'Supervisor Probation Officers', 'Probation Officers'])
     
-    if (deleteGroupsError) console.log('Note: No existing groups to delete or error:', deleteGroupsError.message)
+    if (deleteGroupsError) console.log('Note: Error deleting groups:', deleteGroupsError.message)
 
-    // Delete existing test users
-    const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers()
-    
-    if (existingUsers?.users) {
-      for (const user of existingUsers.users) {
-        if (user.email?.includes('@apex-demo.com')) {
-          await supabaseAdmin.auth.admin.deleteUser(user.id)
-          console.log(`Deleted existing test user: ${user.email}`)
-        }
+    // Delete test users from auth
+    for (const userId of testUserIds) {
+      const { error } = await supabaseAdmin.auth.admin.deleteUser(userId)
+      if (error) {
+        console.error(`Error deleting user ${userId}:`, error.message)
       }
     }
+    
+    console.log('Cleanup complete')
+
+    // Wait a bit for deletions to propagate
+    await new Promise(resolve => setTimeout(resolve, 2000))
 
     // 2. Create Groups
     console.log('Creating groups...')
