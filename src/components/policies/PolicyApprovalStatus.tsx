@@ -186,6 +186,19 @@ const PolicyApprovalStatus = ({ policyId }: PolicyApprovalStatusProps) => {
                   <p className="text-xs text-muted-foreground text-center">Pending</p>
                 </div>
               </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="pt-6">
+                <div className="flex flex-col items-center space-y-2">
+                  <XCircle className="h-8 w-8 text-red-500" />
+                  <div className="text-2xl font-bold">{stats.overdue}</div>
+                  <p className="text-xs text-muted-foreground text-center">Overdue</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </CardContent>
       </Card>
 
       <Card>
@@ -241,19 +254,6 @@ const PolicyApprovalStatus = ({ policyId }: PolicyApprovalStatusProps) => {
               ))}
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      <Card>
-              <CardContent className="pt-6">
-                <div className="flex flex-col items-center space-y-2">
-                  <XCircle className="h-8 w-8 text-red-500" />
-                  <div className="text-2xl font-bold">{stats.overdue}</div>
-                  <p className="text-xs text-muted-foreground text-center">Overdue</p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
         </CardContent>
       </Card>
 
