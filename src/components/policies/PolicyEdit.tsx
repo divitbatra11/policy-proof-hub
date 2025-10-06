@@ -22,12 +22,12 @@ const PolicyEdit = ({ policy, onSave }: PolicyEditProps) => {
   const [file, setFile] = useState<File | null>(null);
   const [changeSummary, setChangeSummary] = useState("");
   const [loading, setLoading] = useState(false);
-  const [fileUrl, setFileUrl] = useState<string>("");
+  const [blobUrl, setBlobUrl] = useState<string>("");
 
   const currentVersion = policy.policy_versions?.find((v: any) => v.id === policy.current_version_id);
 
   useEffect(() => {
-    const getSignedUrl = async () => {
+    const loadPdfBlob = async () => {
       if (!currentVersion?.file_url) return;
       
       // Extract the file path from the full URL
@@ -36,22 +36,32 @@ const PolicyEdit = ({ policy, onSave }: PolicyEditProps) => {
       
       const filePath = urlParts[1];
       
+      // Download the file as a blob
       const { data, error } = await supabase.storage
         .from('policy-documents')
-        .createSignedUrl(filePath, 3600); // 1 hour expiry
+        .download(filePath);
       
       if (error) {
-        console.error('Error getting signed URL:', error);
+        console.error('Error downloading PDF:', error);
         toast.error('Failed to load policy document');
         return;
       }
       
-      if (data?.signedUrl) {
-        setFileUrl(data.signedUrl);
+      if (data) {
+        // Create a blob URL for local viewing
+        const url = URL.createObjectURL(data);
+        setBlobUrl(url);
       }
     };
     
-    getSignedUrl();
+    loadPdfBlob();
+    
+    // Cleanup blob URL on unmount
+    return () => {
+      if (blobUrl) {
+        URL.revokeObjectURL(blobUrl);
+      }
+    };
   }, [currentVersion]);
 
   const handleSave = async () => {
@@ -230,16 +240,23 @@ const PolicyEdit = ({ policy, onSave }: PolicyEditProps) => {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-lg">Document Editor</CardTitle>
+            <CardTitle className="text-lg">Current Document Viewer</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {fileUrl ? (
+            {blobUrl ? (
               <div className="border rounded-lg overflow-hidden bg-background">
-                <iframe
-                  src={`https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(fileUrl)}`}
+                <object
+                  data={blobUrl}
+                  type="application/pdf"
                   className="w-full h-[700px]"
-                  title="Document Editor"
-                />
+                  aria-label="Policy Document Viewer"
+                >
+                  <div className="p-8 text-center">
+                    <p className="text-muted-foreground">
+                      Your browser cannot display this PDF.
+                    </p>
+                  </div>
+                </object>
               </div>
             ) : currentVersion ? (
               <div className="w-full h-[700px] flex items-center justify-center border rounded-lg">

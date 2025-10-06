@@ -14,13 +14,14 @@ interface PolicyViewerProps {
 const PolicyViewer = ({ policy }: PolicyViewerProps) => {
   const [fileUrl, setFileUrl] = useState<string>("");
   const [fileError, setFileError] = useState<boolean>(false);
+  const [blobUrl, setBlobUrl] = useState<string>("");
   
   const currentVersion = policy.policy_versions?.find(
     (v: any) => v.id === policy.current_version_id
   );
 
   useEffect(() => {
-    const getSignedUrl = async () => {
+    const loadPdfBlob = async () => {
       if (!currentVersion?.file_url) return;
       
       // Extract the file path from the full URL
@@ -32,32 +33,49 @@ const PolicyViewer = ({ policy }: PolicyViewerProps) => {
       
       const filePath = urlParts[1];
       
+      // Download the file as a blob
       const { data, error } = await supabase.storage
         .from('policy-documents')
-        .createSignedUrl(filePath, 3600); // 1 hour expiry
+        .download(filePath);
       
       if (error) {
-        console.error('Error getting signed URL:', error);
+        console.error('Error downloading PDF:', error);
         setFileError(true);
         toast.error('Policy document not found in storage');
         return;
       }
       
-      if (data?.signedUrl) {
-        setFileUrl(data.signedUrl);
+      if (data) {
+        // Create a blob URL for local viewing
+        const url = URL.createObjectURL(data);
+        setBlobUrl(url);
+        setFileUrl(url);
         setFileError(false);
       }
     };
     
-    getSignedUrl();
+    loadPdfBlob();
+    
+    // Cleanup blob URL on unmount
+    return () => {
+      if (blobUrl) {
+        URL.revokeObjectURL(blobUrl);
+      }
+    };
   }, [currentVersion]);
 
-  const handleDownload = async (fileUrl: string, fileName: string) => {
+  const handleDownload = async (fileName: string) => {
     try {
+      if (!blobUrl) {
+        toast.error("Document not loaded yet");
+        return;
+      }
       const link = document.createElement("a");
-      link.href = fileUrl;
+      link.href = blobUrl;
       link.download = fileName;
+      document.body.appendChild(link);
       link.click();
+      document.body.removeChild(link);
       toast.success("Download started");
     } catch (error) {
       toast.error("Failed to download file");
@@ -126,8 +144,8 @@ const PolicyViewer = ({ policy }: PolicyViewerProps) => {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => handleDownload(fileUrl, currentVersion.file_name)}
-                    disabled={!fileUrl || fileError}
+                    onClick={() => handleDownload(currentVersion.file_name)}
+                    disabled={!blobUrl || fileError}
                   >
                     <Download className="h-4 w-4 mr-2" />
                     Download
@@ -166,12 +184,23 @@ const PolicyViewer = ({ policy }: PolicyViewerProps) => {
                           </div>
                         </div>
                       </div>
-                    ) : fileUrl ? (
-                      <iframe
-                        src={fileUrl}
+                    ) : blobUrl ? (
+                      <object
+                        data={blobUrl}
+                        type="application/pdf"
                         className="w-full h-[800px]"
-                        title="Policy Document Viewer"
-                      />
+                        aria-label="Policy Document Viewer"
+                      >
+                        <div className="p-8 text-center">
+                          <p className="text-muted-foreground mb-4">
+                            Your browser cannot display this PDF. 
+                          </p>
+                          <Button onClick={() => handleDownload(currentVersion.file_name)}>
+                            <Download className="h-4 w-4 mr-2" />
+                            Download PDF
+                          </Button>
+                        </div>
+                      </object>
                     ) : (
                       <div className="w-full h-[800px] flex items-center justify-center">
                         <p className="text-muted-foreground">Loading document...</p>
