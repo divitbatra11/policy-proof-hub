@@ -185,22 +185,11 @@ const PolicyViewer = ({ policy }: PolicyViewerProps) => {
                         </div>
                       </div>
                     ) : blobUrl ? (
-                      <object
-                        data={blobUrl}
-                        type="application/pdf"
+                      <iframe
+                        src={blobUrl}
                         className="w-full h-[800px]"
-                        aria-label="Policy Document Viewer"
-                      >
-                        <div className="p-8 text-center">
-                          <p className="text-muted-foreground mb-4">
-                            Your browser cannot display this PDF. 
-                          </p>
-                          <Button onClick={() => handleDownload(currentVersion.file_name)}>
-                            <Download className="h-4 w-4 mr-2" />
-                            Download PDF
-                          </Button>
-                        </div>
-                      </object>
+                        title="Policy Document Viewer"
+                      />
                     ) : (
                       <div className="w-full h-[800px] flex items-center justify-center">
                         <p className="text-muted-foreground">Loading document...</p>
