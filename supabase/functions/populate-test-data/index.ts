@@ -133,15 +133,16 @@ Deno.serve(async (req) => {
         userIds.push(userId)
         allUserIds.push(userId)
 
-        // Update profile
+        // Insert profile explicitly (don't rely on trigger timing)
         await supabaseAdmin
           .from('profiles')
-          .update({
+          .upsert({
+            id: userId,
+            email: email,
             full_name: fullName,
             department: group.name,
             role: group.name === 'Admin' ? 'admin' : 'employee'
-          })
-          .eq('id', userId)
+          }, { onConflict: 'id' })
 
         userIndex++
         
