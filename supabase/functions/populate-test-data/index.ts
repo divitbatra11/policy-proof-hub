@@ -50,7 +50,30 @@ Deno.serve(async (req) => {
 
     console.log('Starting data population...')
 
-    // 1. Create Groups
+    // 1. Delete existing test data
+    console.log('Cleaning up existing test data...')
+    
+    // Delete existing groups and their members
+    const { error: deleteGroupsError } = await supabaseAdmin
+      .from('groups')
+      .delete()
+      .in('name', ['Admin', 'Directors', 'Executive Directors', 'Supervisor Probation Officers', 'Probation Officers'])
+    
+    if (deleteGroupsError) console.log('Note: No existing groups to delete or error:', deleteGroupsError.message)
+
+    // Delete existing test users
+    const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers()
+    
+    if (existingUsers?.users) {
+      for (const user of existingUsers.users) {
+        if (user.email?.includes('@apex-demo.com')) {
+          await supabaseAdmin.auth.admin.deleteUser(user.id)
+          console.log(`Deleted existing test user: ${user.email}`)
+        }
+      }
+    }
+
+    // 2. Create Groups
     console.log('Creating groups...')
     const groups = [
       { name: 'Admin', description: 'Administrative staff', userCount: 10 },
@@ -73,7 +96,7 @@ Deno.serve(async (req) => {
       console.log(`Created group: ${group.name}`)
     }
 
-    // 2. Create Users and assign to groups
+    // 3. Create Users and assign to groups
     console.log('Creating users...')
     let userIndex = 1
     const allUserIds: string[] = []
