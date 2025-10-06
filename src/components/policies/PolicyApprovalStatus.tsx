@@ -32,7 +32,7 @@ const PolicyApprovalStatus = ({ policyId }: PolicyApprovalStatusProps) => {
         .from("policies")
         .select("current_version_id")
         .eq("id", policyId)
-        .single();
+        .maybeSingle();
 
       if (!policy?.current_version_id) {
         setLoading(false);
@@ -44,8 +44,7 @@ const PolicyApprovalStatus = ({ policyId }: PolicyApprovalStatusProps) => {
         .from("policy_assignments")
         .select(`
           *,
-          groups(id, name, group_members(user_id)),
-          profiles(id, full_name, email)
+          assigned_user:profiles!policy_assignments_user_id_fkey(id, full_name, email)
         `)
         .eq("policy_id", policyId);
 
@@ -61,19 +60,27 @@ const PolicyApprovalStatus = ({ policyId }: PolicyApprovalStatusProps) => {
       setAssignments(assignmentsData || []);
       setAttestations(attestationsData || []);
 
-      // Calculate stats
+      // Calculate unique assigned users
       const uniqueUsers = new Set<string>();
       const attestedUsers = new Set(attestationsData?.map(a => a.user_id) || []);
 
-      assignmentsData?.forEach(assignment => {
+      // Process assignments
+      for (const assignment of assignmentsData || []) {
         if (assignment.user_id) {
+          // Direct user assignment
           uniqueUsers.add(assignment.user_id);
-        } else if (assignment.groups?.group_members) {
-          assignment.groups.group_members.forEach((member: any) => {
+        } else if (assignment.group_id) {
+          // Group assignment - fetch group members
+          const { data: groupMembers } = await supabase
+            .from("group_members")
+            .select("user_id")
+            .eq("group_id", assignment.group_id);
+          
+          groupMembers?.forEach(member => {
             uniqueUsers.add(member.user_id);
           });
         }
-      });
+      }
 
       const totalAssigned = uniqueUsers.size;
       const completed = Array.from(uniqueUsers).filter(userId => 
@@ -81,11 +88,30 @@ const PolicyApprovalStatus = ({ policyId }: PolicyApprovalStatusProps) => {
       ).length;
       const pending = totalAssigned - completed;
 
-      // Calculate overdue
+      // Calculate overdue (assignments past due date without attestation)
+      let overdue = 0;
       const now = new Date();
-      const overdue = assignmentsData?.filter(a => 
-        a.due_date && new Date(a.due_date) < now
-      ).length || 0;
+      
+      for (const assignment of assignmentsData || []) {
+        if (assignment.due_date && new Date(assignment.due_date) < now) {
+          if (assignment.user_id) {
+            if (!attestedUsers.has(assignment.user_id)) {
+              overdue++;
+            }
+          } else if (assignment.group_id) {
+            const { data: groupMembers } = await supabase
+              .from("group_members")
+              .select("user_id")
+              .eq("group_id", assignment.group_id);
+            
+            groupMembers?.forEach(member => {
+              if (!attestedUsers.has(member.user_id)) {
+                overdue++;
+              }
+            });
+          }
+        }
+      }
 
       setStats({ totalAssigned, completed, pending, overdue });
     } catch (error) {
