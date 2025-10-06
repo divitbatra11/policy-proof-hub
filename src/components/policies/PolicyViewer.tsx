@@ -208,8 +208,8 @@ const PolicyViewer = ({ policy }: PolicyViewerProps) => {
                         >
                           <Page
                             pageNumber={pageNumber}
-                            renderTextLayer={true}
-                            renderAnnotationLayer={true}
+                            renderTextLayer={false}
+                            renderAnnotationLayer={false}
                             className="shadow-lg"
                             width={Math.min(window.innerWidth * 0.8, 900)}
                           />
