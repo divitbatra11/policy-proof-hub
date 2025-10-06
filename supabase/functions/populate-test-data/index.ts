@@ -78,11 +78,19 @@ Deno.serve(async (req) => {
       return { ...group, userCount: config?.userCount || 0 }
     })
 
+    // Get all existing users once to avoid repeated API calls
+    console.log('Fetching existing users...')
+    const { data: allUsers } = await supabaseAdmin.auth.admin.listUsers()
+    const existingUsersMap = new Map(
+      allUsers?.users.map(u => [u.email, u.id]) || []
+    )
+    console.log(`Found ${existingUsersMap.size} existing users`)
+
     // Create Users and assign to groups in smaller batches
-    console.log('Creating users...')
+    console.log('Creating/updating users...')
     let userIndex = 1
     const allUserIds: string[] = []
-    const BATCH_SIZE = 5 // Process 5 users at a time to avoid timeout
+    const BATCH_SIZE = 10 // Process 10 users at a time
 
     for (const group of groupsWithCounts) {
       const userIds: string[] = []
@@ -97,59 +105,56 @@ Deno.serve(async (req) => {
           const password = 'Demo123!'
           const fullName = `${group.name} User ${i + 1}`
           
-          // Create promise for each user creation or retrieval
-          const userPromise = (async () => {
-            // First check if user already exists
-            const { data: existingUser } = await supabaseAdmin.auth.admin.listUsers()
-            const existing = existingUser?.users.find(u => u.email === email)
+          // Check if user exists in our map
+          const existingUserId = existingUsersMap.get(email)
+          
+          if (existingUserId) {
+            // User exists, just update profile and use their ID
+            const updatePromise = supabaseAdmin
+              .from('profiles')
+              .upsert({
+                id: existingUserId,
+                email: email,
+                full_name: fullName,
+                department: group.name,
+                role: group.name === 'Admin' ? 'admin' : 'employee'
+              }, { onConflict: 'id' })
+              .then(() => existingUserId)
             
-            if (existing) {
-              console.log(`User ${email} already exists, using existing user...`)
-              // Update profile to ensure it's up to date
-              await supabaseAdmin
-                .from('profiles')
-                .upsert({
-                  id: existing.id,
-                  email: email,
-                  full_name: fullName,
-                  department: group.name,
-                  role: group.name === 'Admin' ? 'admin' : 'employee'
-                }, { onConflict: 'id' })
-              return existing.id
-            }
-
-            // Create new user if doesn't exist
-            const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+            batchPromises.push(updatePromise)
+          } else {
+            // Create new user
+            const createPromise = supabaseAdmin.auth.admin.createUser({
               email,
               password,
               email_confirm: true,
               user_metadata: {
                 full_name: fullName
               }
+            }).then(async ({ data: authData, error: authError }) => {
+              if (authError) {
+                console.error(`Error creating user ${email}:`, authError)
+                return null
+              }
+
+              const userId = authData.user.id
+              
+              // Insert profile
+              await supabaseAdmin
+                .from('profiles')
+                .upsert({
+                  id: userId,
+                  email: email,
+                  full_name: fullName,
+                  department: group.name,
+                  role: group.name === 'Admin' ? 'admin' : 'employee'
+                }, { onConflict: 'id' })
+
+              return userId
             })
-
-            if (authError) {
-              console.error(`Error creating user ${email}:`, authError)
-              return null
-            }
-
-            const userId = authData.user.id
             
-            // Insert profile
-            await supabaseAdmin
-              .from('profiles')
-              .upsert({
-                id: userId,
-                email: email,
-                full_name: fullName,
-                department: group.name,
-                role: group.name === 'Admin' ? 'admin' : 'employee'
-              }, { onConflict: 'id' })
-
-            return userId
-          })()
-
-          batchPromises.push(userPromise)
+            batchPromises.push(createPromise)
+          }
         }
 
         // Wait for batch to complete
@@ -159,7 +164,7 @@ Deno.serve(async (req) => {
         allUserIds.push(...validUserIds)
         
         userIndex += BATCH_SIZE
-        console.log(`Processed batch, total users: ${allUserIds.length}`)
+        console.log(`Processed batch for ${group.name}, total users so far: ${allUserIds.length}`)
       }
 
       // Add users to group in one operation
