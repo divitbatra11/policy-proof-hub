@@ -18,17 +18,17 @@ const PopulateTestData = () => {
     setResult(null);
 
     try {
-      const { data, error } = await supabase.functions.invoke('populate-test-data', {
+      const { data, error } = await supabase.functions.invoke('cleanup-and-populate', {
         body: {}
       });
 
       if (error) throw error;
 
       setResult(data);
-      toast.success('Test data populated successfully!');
+      toast.success('Database cleaned and populated successfully!');
     } catch (err: any) {
       setError(err.message);
-      toast.error('Failed to populate test data');
+      toast.error('Failed to clean and populate database');
       console.error('Population error:', err);
     } finally {
       setLoading(false);
@@ -47,41 +47,27 @@ const PopulateTestData = () => {
 
         <Card>
           <CardHeader>
-            <CardTitle>Test Data Generator</CardTitle>
+            <CardTitle>Database Cleanup & Population</CardTitle>
             <CardDescription>
-              This will create 798 policies and 296 users across 5 groups
+              This will delete all users (except yours) and policies, then create 798 sample policies
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div className="space-y-2">
-                  <p className="font-semibold">Groups to be created:</p>
-                  <ul className="space-y-1 text-muted-foreground">
-                    <li>• Admin (10 users)</li>
-                    <li>• Directors (10 users)</li>
-                    <li>• Executive Directors (5 users)</li>
-                    <li>• Supervisor Probation Officers (50 users)</li>
-                    <li>• Probation Officers (221 users)</li>
-                  </ul>
-                </div>
-                <div className="space-y-2">
-                  <p className="font-semibold">Data to be generated:</p>
-                  <ul className="space-y-1 text-muted-foreground">
-                    <li>• 798 Policies</li>
-                    <li>• 296 Users</li>
-                    <li>• 5 Groups</li>
-                    <li>• Group assignments</li>
-                  </ul>
-                </div>
-              </div>
-
               <Alert>
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription>
-                  <strong>Note:</strong> All test users will have the password: <code className="font-mono bg-muted px-1 py-0.5 rounded">Demo123!</code>
+                  <strong>Warning:</strong> This will delete all users (except divitbatra1102@gmail.com) and all policies from the database.
                   <br />
-                  Email format: user1@apex-demo.com, user2@apex-demo.com, etc.
+                  <br />
+                  Then it will create 798 sample policies with actual policy content covering:
+                  <ul className="mt-2 space-y-1 ml-4">
+                    <li>• Code of Conduct</li>
+                    <li>• Data Security & Privacy</li>
+                    <li>• Remote Work Guidelines</li>
+                    <li>• Expense Reimbursement</li>
+                    <li>• Paid Time Off</li>
+                  </ul>
                 </AlertDescription>
               </Alert>
             </div>
@@ -91,16 +77,17 @@ const PopulateTestData = () => {
               disabled={loading}
               size="lg"
               className="w-full"
+              variant="destructive"
             >
               {loading ? (
                 <>
                   <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                  Populating Data... This may take a few minutes
+                  Cleaning and Populating... This may take a minute
                 </>
               ) : (
                 <>
                   <Database className="h-5 w-5 mr-2" />
-                  Populate Test Data
+                  Clean & Populate Database
                 </>
               )}
             </Button>
@@ -117,21 +104,11 @@ const PopulateTestData = () => {
                 <CheckCircle2 className="h-4 w-4" />
                 <AlertDescription>
                   <div className="space-y-2">
-                    <p className="font-semibold">Success! Data populated:</p>
+                    <p className="font-semibold">Success! Database cleaned and populated:</p>
                     <ul className="text-sm space-y-1">
-                      <li>• {result.stats.groups} groups created</li>
-                      <li>• {result.stats.users} users created</li>
-                      <li>• {result.stats.policies} policies created</li>
+                      <li>• {result.stats.usersDeleted} users deleted</li>
+                      <li>• {result.stats.policiesCreated} policies created</li>
                     </ul>
-                    <div className="mt-4 p-3 bg-muted rounded-lg">
-                      <p className="font-semibold text-sm mb-2">Sample login credentials:</p>
-                      <div className="text-xs space-y-1 font-mono">
-                        {result.loginInfo.exampleUsers.map((user: string, i: number) => (
-                          <div key={i}>{user}</div>
-                        ))}
-                      </div>
-                      <p className="text-xs mt-2">Password for all users: <code>Demo123!</code></p>
-                    </div>
                   </div>
                 </AlertDescription>
               </Alert>
