@@ -21,7 +21,7 @@ const CTA = () => {
           </h2>
           
           <p className="text-xl opacity-90 max-w-2xl mx-auto">
-            Join public safety and healthcare organizations using PowerPolicy as their single source of truth 
+            Join public safety and healthcare organizations using APEX as their single source of truth 
             for policy management and compliance.
           </p>
           

@@ -63,7 +63,7 @@ const Hero = () => {
             <div className="absolute -inset-4 bg-gradient-to-r from-primary/20 to-accent/20 rounded-2xl blur-2xl"></div>
             <img 
               src={heroImage} 
-              alt="PowerPolicy Dashboard - Policy Management Platform" 
+              alt="APEX Dashboard - Policy Management Platform" 
               className="relative rounded-2xl shadow-2xl w-full"
             />
           </div>

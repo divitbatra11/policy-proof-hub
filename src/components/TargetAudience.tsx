@@ -33,7 +33,7 @@ const TargetAudience = () => {
             Built for Mission-Critical Organizations
           </h2>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            PowerPolicy serves public safety and healthcare teams who need defensible proof of policy compliance.
+            APEX serves public safety and healthcare teams who need defensible proof of policy compliance.
           </p>
         </div>
         

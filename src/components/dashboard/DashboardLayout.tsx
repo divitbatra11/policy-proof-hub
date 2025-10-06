@@ -34,7 +34,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
             <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-primary-light flex items-center justify-center">
               <Shield className="h-6 w-6 text-primary-foreground" />
             </div>
-            <span className="text-xl font-bold">PowerPolicy</span>
+            <span className="text-xl font-bold">APEX</span>
           </Link>
           
           <Button variant="outline" onClick={handleSignOut}>

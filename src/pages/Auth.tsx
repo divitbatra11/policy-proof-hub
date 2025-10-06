@@ -75,8 +75,8 @@ const Auth = () => {
             <Shield className="h-8 w-8 text-primary-foreground" />
           </div>
           <div>
-            <CardTitle className="text-3xl font-bold">PowerPolicy</CardTitle>
-            <CardDescription>Policy management and compliance platform</CardDescription>
+            <CardTitle className="text-3xl font-bold">APEX</CardTitle>
+            <CardDescription>Alberta Policy EXchange - Policy management and compliance platform</CardDescription>
           </div>
         </CardHeader>
         <CardContent>
