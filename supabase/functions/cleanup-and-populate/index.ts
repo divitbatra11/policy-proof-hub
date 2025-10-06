@@ -267,8 +267,17 @@ Deno.serve(async (req) => {
 
     console.log('Starting cleanup and population...')
 
-    // 1. Get all users except the protected one
+    // 1. Get current user ID FIRST (before any deletions)
     const { data: { users: allUsers } } = await supabaseAdmin.auth.admin.listUsers()
+    const currentUser = allUsers?.find(u => u.email === 'divitbatra1102@gmail.com')
+    
+    if (!currentUser) {
+      throw new Error('Current user (divitbatra1102@gmail.com) not found')
+    }
+    
+    console.log(`Found current user: ${currentUser.id}`)
+
+    // 2. Get all users to delete (except the protected one)
     const usersToDelete: string[] = []
     
     if (allUsers) {
@@ -281,7 +290,7 @@ Deno.serve(async (req) => {
 
     console.log(`Found ${usersToDelete.length} users to delete`)
 
-    // 2. Delete all data in correct order
+    // 3. Delete all data in correct order
     if (usersToDelete.length > 0) {
       console.log('Deleting attestations...')
       await supabaseAdmin.from('attestations').delete().in('user_id', usersToDelete)
@@ -312,7 +321,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 3. Delete ALL policies (no conditions)
+    // 4. Delete ALL policies (no conditions)
     console.log('Deleting all policies...')
     const { data: allPolicies } = await supabaseAdmin.from('policies').select('id')
     if (allPolicies && allPolicies.length > 0) {
@@ -321,14 +330,6 @@ Deno.serve(async (req) => {
       await supabaseAdmin.from('assessments').delete().in('policy_id', policyIds)
       await supabaseAdmin.from('policies').delete().in('id', policyIds)
       console.log(`Deleted ${allPolicies.length} policies`)
-    }
-
-    // 4. Get the current user ID for creating policies
-    const { data: { users: remainingUsers } } = await supabaseAdmin.auth.admin.listUsers()
-    const currentUser = remainingUsers?.find(u => u.email === 'divitbatra1102@gmail.com')
-    
-    if (!currentUser) {
-      throw new Error('Current user not found')
     }
 
     console.log('Creating 798 policies...')
