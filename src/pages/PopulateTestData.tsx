@@ -18,17 +18,17 @@ const PopulateTestData = () => {
     setResult(null);
 
     try {
-      const { data, error } = await supabase.functions.invoke('cleanup-and-populate', {
+      const { data, error } = await supabase.functions.invoke('populate-test-data', {
         body: {}
       });
 
       if (error) throw error;
 
       setResult(data);
-      toast.success('Database cleaned and populated successfully!');
+      toast.success('Users added successfully!');
     } catch (err: any) {
       setError(err.message);
-      toast.error('Failed to clean and populate database');
+      toast.error('Failed to add users');
       console.error('Population error:', err);
     } finally {
       setLoading(false);
@@ -39,35 +39,33 @@ const PopulateTestData = () => {
     <DashboardLayout>
       <div className="max-w-4xl mx-auto space-y-6">
         <div>
-          <h1 className="text-3xl font-bold">Populate Test Data</h1>
+          <h1 className="text-3xl font-bold">Add Users</h1>
           <p className="text-muted-foreground">
-            Generate sample users, groups, and policies for testing
+            Add 340 sample users and assign them to groups
           </p>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>Database Cleanup & Population</CardTitle>
+            <CardTitle>Add Sample Users</CardTitle>
             <CardDescription>
-              This will delete all users (except yours) and policies, then create 798 sample policies
+              Create test users and assign them to existing groups
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
             <div className="space-y-4">
               <Alert>
-                <AlertCircle className="h-4 w-4" />
+                <Database className="h-4 w-4" />
                 <AlertDescription>
-                  <strong>Warning:</strong> This will delete all users (except divitbatra1102@gmail.com) and all policies from the database.
-                  <br />
-                  <br />
-                  Then it will create 798 sample policies with actual policy content covering:
+                  This will create 340 sample users and assign them to groups:
                   <ul className="mt-2 space-y-1 ml-4">
-                    <li>• Code of Conduct</li>
-                    <li>• Data Security & Privacy</li>
-                    <li>• Remote Work Guidelines</li>
-                    <li>• Expense Reimbursement</li>
-                    <li>• Paid Time Off</li>
+                    <li>• Directors: 15 users</li>
+                    <li>• Executive Directors: 5 users</li>
+                    <li>• Admin: 20 users</li>
+                    <li>• SPO: 50 users</li>
+                    <li>• PO: 250 users</li>
                   </ul>
+                  <p className="mt-2">All users will have password: <strong>Demo123!</strong></p>
                 </AlertDescription>
               </Alert>
             </div>
@@ -77,17 +75,16 @@ const PopulateTestData = () => {
               disabled={loading}
               size="lg"
               className="w-full"
-              variant="destructive"
             >
               {loading ? (
                 <>
                   <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                  Cleaning and Populating... This may take a minute
+                  Adding Users... This may take a minute
                 </>
               ) : (
                 <>
                   <Database className="h-5 w-5 mr-2" />
-                  Clean & Populate Database
+                  Add Users to Groups
                 </>
               )}
             </Button>
@@ -104,10 +101,9 @@ const PopulateTestData = () => {
                 <CheckCircle2 className="h-4 w-4" />
                 <AlertDescription>
                   <div className="space-y-2">
-                    <p className="font-semibold">Success! Database cleaned and populated:</p>
+                    <p className="font-semibold">Success! Users added:</p>
                     <ul className="text-sm space-y-1">
-                      <li>• {result.stats.usersDeleted} users deleted</li>
-                      <li>• {result.stats.policiesCreated} policies created</li>
+                      <li>• {result.stats.users} users created</li>
                     </ul>
                   </div>
                 </AlertDescription>

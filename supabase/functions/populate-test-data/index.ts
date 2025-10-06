@@ -48,100 +48,42 @@ Deno.serve(async (req) => {
       }
     })
 
-    console.log('Starting data population...')
+    console.log('Starting user population...')
 
-    // 1. Delete existing test data
-    console.log('Cleaning up existing test data...')
-    
-    // Get all test users first
-    const { data: { users: allUsers } } = await supabaseAdmin.auth.admin.listUsers()
-    const testUserIds: string[] = []
-    
-    if (allUsers) {
-      for (const user of allUsers) {
-        if (user.email?.includes('@apex-demo.com')) {
-          testUserIds.push(user.id)
-        }
-      }
-    }
-
-    console.log(`Found ${testUserIds.length} existing test users to delete`)
-
-    if (testUserIds.length > 0) {
-      // Delete in correct order to avoid foreign key constraints
-      
-      // 1. Delete attestations
-      await supabaseAdmin.from('attestations').delete().in('user_id', testUserIds)
-      
-      // 2. Delete assessment results
-      await supabaseAdmin.from('assessment_results').delete().in('user_id', testUserIds)
-      
-      // 3. Delete policy assignments
-      await supabaseAdmin.from('policy_assignments').delete().in('user_id', testUserIds)
-      await supabaseAdmin.from('policy_assignments').delete().in('assigned_by', testUserIds)
-      
-      // 4. Delete group members
-      await supabaseAdmin.from('group_members').delete().in('user_id', testUserIds)
-      
-      // 5. Delete policies created by test users
-      await supabaseAdmin.from('policies').delete().in('created_by', testUserIds)
-      
-      // 6. Delete profiles
-      await supabaseAdmin.from('profiles').delete().in('id', testUserIds)
-      
-      console.log('Deleted all related data for test users')
-    }
-    
-    // Delete existing test groups
-    await supabaseAdmin
+    // Get existing groups
+    const { data: existingGroups, error: groupsError } = await supabaseAdmin
       .from('groups')
-      .delete()
+      .select('*')
       .in('name', ['Directors', 'Executive Directors', 'Admin', 'SPO', 'PO'])
-
-    // Delete test users from auth (should work now that all related data is gone)
-    for (const userId of testUserIds) {
-      try {
-        await supabaseAdmin.auth.admin.deleteUser(userId)
-        console.log(`Deleted user ${userId}`)
-      } catch (error) {
-        console.error(`Error deleting user ${userId}:`, error)
-      }
-    }
     
-    console.log('Cleanup complete')
+    if (groupsError) throw groupsError
+    
+    if (!existingGroups || existingGroups.length === 0) {
+      throw new Error('Groups not found. Please create the groups first.')
+    }
 
-    // Wait longer for auth deletions to fully propagate
-    await new Promise(resolve => setTimeout(resolve, 5000))
+    console.log(`Found ${existingGroups.length} groups`)
 
-    // 2. Create Groups
-    console.log('Creating groups...')
-    const groups = [
-      { name: 'Directors', description: 'Director level staff members', userCount: 15 },
-      { name: 'Executive Directors', description: 'Executive director level staff members', userCount: 5 },
-      { name: 'Admin', description: 'Administrative staff members', userCount: 20 },
-      { name: 'SPO', description: 'Senior Probation Officer staff members', userCount: 50 },
-      { name: 'PO', description: 'Probation Officer staff members', userCount: 250 }
+    // Map groups to their user counts
+    const groupConfig = [
+      { name: 'Directors', userCount: 15 },
+      { name: 'Executive Directors', userCount: 5 },
+      { name: 'Admin', userCount: 20 },
+      { name: 'SPO', userCount: 50 },
+      { name: 'PO', userCount: 250 }
     ]
 
-    const createdGroups = []
-    for (const group of groups) {
-      const { data, error } = await supabaseAdmin
-        .from('groups')
-        .insert({ name: group.name, description: group.description })
-        .select()
-        .single()
-      
-      if (error) throw error
-      createdGroups.push({ ...data, userCount: group.userCount })
-      console.log(`Created group: ${group.name}`)
-    }
+    const groupsWithCounts = existingGroups.map(group => {
+      const config = groupConfig.find(g => g.name === group.name)
+      return { ...group, userCount: config?.userCount || 0 }
+    })
 
-    // 3. Create Users and assign to groups
+    // Create Users and assign to groups
     console.log('Creating users...')
     let userIndex = 1
     const allUserIds: string[] = []
 
-    for (const group of createdGroups) {
+    for (const group of groupsWithCounts) {
       const userIds: string[] = []
       
       for (let i = 0; i < group.userCount; i++) {
@@ -224,55 +166,12 @@ Deno.serve(async (req) => {
 
     console.log(`Total users created: ${allUserIds.length}`)
 
-    // 3. Get an admin user for policy creation
-    const adminUser = allUserIds[0] // First user is an admin
-
-    // 4. Create Policies
-    console.log('Creating policies...')
-    const policyPromises = []
-    
-    for (let i = 0; i < 798; i++) {
-      const category = policyCategories[i % policyCategories.length]
-      const title = generatePolicyTitle(i, category)
-      const description = generatePolicyDescription(category)
-      
-      policyPromises.push(
-        supabaseAdmin
-          .from('policies')
-          .insert({
-            title,
-            description,
-            category,
-            status: 'published',
-            created_by: adminUser
-          })
-          .select()
-          .single()
-      )
-
-      // Batch insert every 50 policies
-      if (policyPromises.length >= 50) {
-        await Promise.all(policyPromises)
-        console.log(`Created ${i + 1} policies...`)
-        policyPromises.length = 0
-      }
-    }
-
-    // Insert remaining policies
-    if (policyPromises.length > 0) {
-      await Promise.all(policyPromises)
-    }
-
-    console.log('Created 798 policies')
-
     return new Response(
       JSON.stringify({
         success: true,
-        message: 'Test data populated successfully',
+        message: 'Users populated successfully',
         stats: {
-          groups: createdGroups.length,
-          users: allUserIds.length,
-          policies: 798
+          users: allUserIds.length
         },
         loginInfo: {
           message: 'You can login with any user. All passwords are: Demo123!',
