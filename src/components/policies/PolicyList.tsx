@@ -49,41 +49,13 @@ const PolicyList = () => {
 
       if (error) throw error;
       
-      // Group policies with the same base name (removing version numbers)
-      const groupedPolicies = new Map();
-      
-      data?.forEach((policy) => {
-        // Remove version numbers like "v16", "v2", etc. from the title
-        const baseTitle = policy.title.replace(/\s+v\d+$/i, '').trim();
-        
-        if (!groupedPolicies.has(baseTitle)) {
-          groupedPolicies.set(baseTitle, {
-            ...policy,
-            title: baseTitle,
-            policyIds: [policy.id]
-          });
-        } else {
-          // Add this policy ID to the group
-          const existing = groupedPolicies.get(baseTitle);
-          existing.policyIds.push(policy.id);
-          // Use the most recently created policy's data
-          if (new Date(policy.created_at) > new Date(existing.created_at)) {
-            groupedPolicies.set(baseTitle, {
-              ...policy,
-              title: baseTitle,
-              policyIds: existing.policyIds
-            });
-          }
-        }
-      });
-
-      // For each grouped policy, count total versions across all policy IDs
+      // For each policy, count versions from policy_versions table
       const policiesWithVersions = await Promise.all(
-        Array.from(groupedPolicies.values()).map(async (policy) => {
+        (data || []).map(async (policy) => {
           const { count } = await supabase
             .from("policy_versions")
             .select("*", { count: "exact", head: true })
-            .in("policy_id", policy.policyIds);
+            .eq("policy_id", policy.id);
           
           return {
             ...policy,
