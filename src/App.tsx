@@ -14,6 +14,7 @@ import NotFound from "./pages/NotFound";
 import UploadPolicyDocs from "./pages/UploadPolicyDocs";
 import PendingAttestations from "./pages/PendingAttestations";
 import PopulateTestData from "./pages/PopulateTestData";
+import CleanupUsers from "./pages/CleanupUsers";
 
 const queryClient = new QueryClient();
 
@@ -34,6 +35,7 @@ const App = () => (
           <Route path="/dashboard/settings" element={<Settings />} />
           <Route path="/upload-docs" element={<UploadPolicyDocs />} />
           <Route path="/populate-test-data" element={<PopulateTestData />} />
+          <Route path="/cleanup-users" element={<CleanupUsers />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
