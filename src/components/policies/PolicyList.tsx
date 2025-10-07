@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Eye, Edit, Users } from "lucide-react";
+import { Eye, FileText } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
@@ -37,7 +37,14 @@ const PolicyList = () => {
         .from("policies")
         .select(`
           *,
-          created_by_profile:profiles!policies_created_by_fkey(full_name)
+          created_by_profile:profiles!policies_created_by_fkey(full_name),
+          policy_versions(
+            id,
+            version_number,
+            created_at,
+            file_name,
+            published_at
+          )
         `)
         .order("created_at", { ascending: false });
 
@@ -48,7 +55,37 @@ const PolicyList = () => {
       const { data, error } = await query;
 
       if (error) throw error;
-      setPolicies(data || []);
+      
+      // Group policies with the same base name (removing version numbers)
+      const groupedPolicies = new Map();
+      
+      data?.forEach((policy) => {
+        // Remove version numbers like "v16", "v2", etc. from the title
+        const baseTitle = policy.title.replace(/\s+v\d+$/i, '').trim();
+        
+        if (!groupedPolicies.has(baseTitle)) {
+          groupedPolicies.set(baseTitle, {
+            ...policy,
+            title: baseTitle,
+            versions: policy.policy_versions || []
+          });
+        } else {
+          // Merge versions if there are multiple policies with same base name
+          const existing = groupedPolicies.get(baseTitle);
+          const newVersions = Array.isArray(policy.policy_versions) ? policy.policy_versions : [];
+          existing.versions = [...existing.versions, ...newVersions];
+          // Use the most recently created policy's data
+          if (new Date(policy.created_at) > new Date(existing.created_at)) {
+            groupedPolicies.set(baseTitle, {
+              ...policy,
+              title: baseTitle,
+              versions: existing.versions
+            });
+          }
+        }
+      });
+
+      setPolicies(Array.from(groupedPolicies.values()));
     } catch (error: any) {
       toast.error("Failed to load policies");
     } finally {
@@ -83,16 +120,26 @@ const PolicyList = () => {
   return (
     <div className="grid gap-4">
       {policies.map((policy) => (
-        <Card key={policy.id}>
+        <Card key={policy.id} className="hover:border-primary transition-colors">
           <CardHeader>
             <div className="flex items-start justify-between">
               <div className="space-y-1">
-                <CardTitle>{policy.title}</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  {policy.title}
+                </CardTitle>
                 <CardDescription>{policy.description}</CardDescription>
               </div>
-              <Badge variant={getStatusColor(policy.status)}>
-                {policy.status}
-              </Badge>
+              <div className="flex gap-2">
+                <Badge variant={getStatusColor(policy.status)}>
+                  {policy.status}
+                </Badge>
+                {policy.versions && policy.versions.length > 0 && (
+                  <Badge variant="outline">
+                    {policy.versions.length} version{policy.versions.length > 1 ? 's' : ''}
+                  </Badge>
+                )}
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -101,6 +148,11 @@ const PolicyList = () => {
                 <p>Created by: {policy.created_by_profile?.full_name}</p>
                 <p>Created: {format(new Date(policy.created_at), "PPP")}</p>
                 {policy.category && <p>Category: {policy.category}</p>}
+                {policy.current_version_id && policy.versions && policy.versions.length > 0 && (
+                  <p>
+                    Current Version: {policy.versions.find((v: any) => v.id === policy.current_version_id)?.version_number || 1}
+                  </p>
+                )}
               </div>
               <div className="flex gap-2">
                 <Button 
