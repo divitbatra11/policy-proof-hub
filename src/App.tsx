@@ -16,6 +16,7 @@ import PendingAttestations from "./pages/PendingAttestations";
 import PopulateTestData from "./pages/PopulateTestData";
 import CleanupUsers from "./pages/CleanupUsers";
 import AddUsersToGroup from "./pages/AddUsersToGroup";
+import GroupDetail from "./pages/GroupDetail";
 
 const queryClient = new QueryClient();
 
@@ -33,6 +34,7 @@ const App = () => (
           <Route path="/dashboard/policies/:id" element={<PolicyDetail />} />
           <Route path="/dashboard/attestations" element={<PendingAttestations />} />
           <Route path="/dashboard/groups" element={<Groups />} />
+          <Route path="/dashboard/groups/:id" element={<GroupDetail />} />
           <Route path="/dashboard/settings" element={<Settings />} />
           <Route path="/upload-docs" element={<UploadPolicyDocs />} />
           <Route path="/populate-test-data" element={<PopulateTestData />} />

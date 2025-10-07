@@ -6,8 +6,10 @@ import { Plus, Users } from "lucide-react";
 import CreateGroupDialog from "./CreateGroupDialog";
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { useNavigate } from "react-router-dom";
 
 const GroupList = () => {
+  const navigate = useNavigate();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
   const { data: profile } = useQuery({
@@ -62,7 +64,11 @@ const GroupList = () => {
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {groups?.map((group) => (
-          <Card key={group.id}>
+          <Card 
+            key={group.id} 
+            className="cursor-pointer hover:border-primary transition-colors"
+            onClick={() => navigate(`/dashboard/groups/${group.id}`)}
+          >
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Users className="h-5 w-5" />
