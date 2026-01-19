@@ -13,6 +13,8 @@ import PolicyVersionComparison from "@/components/policies/PolicyVersionComparis
 import PolicyEdit from "@/components/policies/PolicyEdit";
 import PolicyApprovalStatus from "@/components/policies/PolicyApprovalStatus";
 import PolicySettings from "@/components/policies/PolicySettings";
+import PolicyPdfDiffViewer from "@/components/policies/PolicyPdfDiffViewer";
+
 
 const PolicyDetail = () => {
   const { id } = useParams();
@@ -136,6 +138,27 @@ const PolicyDetail = () => {
   const canEdit = isAdminOrPublisher;
   const canAssign = isAdminOrPublisher;
   const needsAttestation = isAssigned && !hasAttested && policy.status === "published";
+  const handleUploadNewVersion = async () => {
+  try {
+    // Confirm the policy exists and get its ID from Supabase
+    const { data, error } = await supabase
+      .from("policies")
+      .select("id")
+      .eq("id", policy.id)
+      .single();
+
+    if (error || !data?.id) throw error ?? new Error("Policy not found");
+
+    // Pass via router state (most reliable) + query param (refresh fallback)
+    navigate(`/upload-docs?policyId=${data.id}`, {
+      state: { policyId: data.id },
+    });
+  } catch (e) {
+    console.error(e);
+    toast.error("Could not start new version upload for this policy");
+  }
+};
+
   
   // Determine default tab based on URL parameter
   const actionParam = searchParams.get("action");
@@ -163,8 +186,18 @@ const PolicyDetail = () => {
           </TabsList>
 
           <TabsContent value="view" className="space-y-4">
+            {isAdminOrPublisher && (
+              <div className="flex justify-end">
+                <Button onClick={handleUploadNewVersion}>
+                  Upload New Version
+                </Button>
+              </div>
+            )}
+
             <PolicyViewer policy={policy} />
           </TabsContent>
+
+
 
           {needsAttestation && (
             <TabsContent value="sign" className="space-y-4">
@@ -196,11 +229,12 @@ const PolicyDetail = () => {
           </TabsContent>
 
           <TabsContent value="compare" className="space-y-4">
-            <PolicyVersionComparison 
-              policyId={policy.id}
+            <PolicyPdfDiffViewer
               versions={policy.policy_versions || []}
+              currentVersionId={policy.current_version_id}
             />
           </TabsContent>
+
 
           {canEdit && (
             <TabsContent value="settings" className="space-y-4">
