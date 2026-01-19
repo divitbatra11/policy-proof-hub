@@ -966,16 +966,6 @@ const UploadPolicyDocs = () => {
       const publicUrl = pub?.publicUrl ?? null;
       console.log("[UploadPolicyDocs] Public URL:", publicUrl);
       if (!publicUrl) throw new Error("Could not obtain a public URL for the uploaded PDF. Is the bucket public?");
-
-      // 4) Insert policy_versions
-      const { data: inserted, error: insErr } = await supabase
-        .from("policy_versions")
-        .insert({
-          policy_id: ensuredPolicyId,
-      const publicUrl = pub?.publicUrl ?? null;
-      console.log("[UploadPolicyDocs] Public URL:", publicUrl);
-      if (!publicUrl) throw new Error("Could not obtain a public URL for the uploaded PDF. Is the bucket public?");
-
       // 4) Insert policy_versions
       const { data: inserted, error: insErr } = await supabase
         .from("policy_versions")
@@ -989,24 +979,7 @@ const UploadPolicyDocs = () => {
         })
         .select("id")
         .single();
-      if (insErr) throw new Error(`Failed to create policy version: ${insErr.message}`);
-      const versionId = inserted!.id;
-
-      // 5) Update policies.current_version_id (+ publish if allowed)
-      const { error: updErr } = await supabase
-        .from("policies")
-        .update({ current_version_id: versionId, status: "published" })
-        .eq("id", ensuredPolicyId);
-      if (updErr) {
-        // Fallback if 'published' isn't a valid enum value in your DB
-        const { error: fallback } = await supabase
-          .from("policies")
-          .update({ current_version_id: versionId })
-          .eq("id", ensuredPolicyId);
-        if (fallback) throw new Error(`Failed to set current version on policy: ${fallback.message}`);
-        })
-        .select("id")
-        .single();
+      
       if (insErr) throw new Error(`Failed to create policy version: ${insErr.message}`);
       const versionId = inserted!.id;
 
