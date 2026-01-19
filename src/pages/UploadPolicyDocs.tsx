@@ -360,6 +360,7 @@ function drawAlbertaHeader(
 
 // ------------------------------
 // Helpers
+// Helpers
 // ------------------------------
 function toTitleCase(s: string) {
   return s.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
@@ -765,6 +766,7 @@ const UploadPolicyDocs = () => {
 
     try {
       console.log("[UploadPolicyDocs] Reading .docx…");
+      console.log("[UploadPolicyDocs] Reading .docx…");
       const arrayBuffer = await f.arrayBuffer();
 
       const { value: html, messages } = await mammoth.convertToHtml(
@@ -782,7 +784,10 @@ const UploadPolicyDocs = () => {
 
       if (messages?.length) console.info("[UploadPolicyDocs] Mammoth messages:", messages);
       toast.success("Document parsed. Review header fields, then Convert & Upload.");
+      if (messages?.length) console.info("[UploadPolicyDocs] Mammoth messages:", messages);
+      toast.success("Document parsed. Review header fields, then Convert & Upload.");
     } catch (err) {
+      console.error("[UploadPolicyDocs] DOCX parse error:", err);
       console.error("[UploadPolicyDocs] DOCX parse error:", err);
       toast.error("Failed to read the .docx file");
     }
@@ -874,6 +879,9 @@ const UploadPolicyDocs = () => {
     if (!file) toast.error("Please select a .docx file first");
     if (!docHtml) toast.error("Nothing to convert (failed to parse?)");
     if (!file || !docHtml) return;
+    if (!file) toast.error("Please select a .docx file first");
+    if (!docHtml) toast.error("Nothing to convert (failed to parse?)");
+    if (!file || !docHtml) return;
 
     setIsUploading(true);
     setUploadComplete(false);
@@ -942,15 +950,28 @@ const UploadPolicyDocs = () => {
       const pdfName = makePdfName(file.name, number, subject);
 
       // 2) Upload PDF to Storage
+      // 2) Upload PDF to Storage
       const path = `formatted/${Date.now()}_${pdfName}`;
+      console.log("[UploadPolicyDocs] Uploading to Storage path:", path);
       console.log("[UploadPolicyDocs] Uploading to Storage path:", path);
       const { error: upErr } = await supabase.storage
         .from("policy-documents")
         .upload(path, pdfBlob, { contentType: "application/pdf", upsert: false });
       if (upErr) throw new Error(`Storage upload failed: ${upErr.message}`);
+      if (upErr) throw new Error(`Storage upload failed: ${upErr.message}`);
 
       // 3) Public URL (use signed URLs instead if your bucket is private)
+      // 3) Public URL (use signed URLs instead if your bucket is private)
       const { data: pub } = supabase.storage.from("policy-documents").getPublicUrl(path);
+      const publicUrl = pub?.publicUrl ?? null;
+      console.log("[UploadPolicyDocs] Public URL:", publicUrl);
+      if (!publicUrl) throw new Error("Could not obtain a public URL for the uploaded PDF. Is the bucket public?");
+
+      // 4) Insert policy_versions
+      const { data: inserted, error: insErr } = await supabase
+        .from("policy_versions")
+        .insert({
+          policy_id: ensuredPolicyId,
       const publicUrl = pub?.publicUrl ?? null;
       console.log("[UploadPolicyDocs] Public URL:", publicUrl);
       if (!publicUrl) throw new Error("Could not obtain a public URL for the uploaded PDF. Is the bucket public?");
@@ -983,13 +1004,36 @@ const UploadPolicyDocs = () => {
           .update({ current_version_id: versionId })
           .eq("id", ensuredPolicyId);
         if (fallback) throw new Error(`Failed to set current version on policy: ${fallback.message}`);
+        })
+        .select("id")
+        .single();
+      if (insErr) throw new Error(`Failed to create policy version: ${insErr.message}`);
+      const versionId = inserted!.id;
+
+      // 5) Update policies.current_version_id (+ publish if allowed)
+      const { error: updErr } = await supabase
+        .from("policies")
+        .update({ current_version_id: versionId, status: "published" })
+        .eq("id", ensuredPolicyId);
+      if (updErr) {
+        // Fallback if 'published' isn't a valid enum value in your DB
+        const { error: fallback } = await supabase
+          .from("policies")
+          .update({ current_version_id: versionId })
+          .eq("id", ensuredPolicyId);
+        if (fallback) throw new Error(`Failed to set current version on policy: ${fallback.message}`);
       }
 
       setUploadComplete(true);
       toast.success("Policy created, converted to PDF, and linked!");
       console.log("[UploadPolicyDocs] All done → redirect to detail");
       navigate(`/dashboard/policies/${ensuredPolicyId}`);
+      toast.success("Policy created, converted to PDF, and linked!");
+      console.log("[UploadPolicyDocs] All done → redirect to detail");
+      navigate(`/dashboard/policies/${ensuredPolicyId}`);
     } catch (error: any) {
+      console.error("[UploadPolicyDocs] Convert/Upload error:", error);
+      toast.error(error?.message ?? "Failed to convert and upload");
       console.error("[UploadPolicyDocs] Convert/Upload error:", error);
       toast.error(error?.message ?? "Failed to convert and upload");
     } finally {
@@ -1056,6 +1100,7 @@ const UploadPolicyDocs = () => {
             </div>
             <div className="space-y-2">
               <Label>Number</Label>
+              <Input value={number} onChange={(e) => setNumber(e.target.value)} placeholder="e.g., 8.01.01" />
               <Input value={number} onChange={(e) => setNumber(e.target.value)} placeholder="e.g., 8.01.01" />
             </div>
             <div className="space-y-2">
