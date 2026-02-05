@@ -3,6 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import ChatBot from "@/components/chat/ChatBot";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
@@ -29,6 +30,7 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
+      <ChatBot />
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
@@ -41,6 +43,7 @@ const App = () => (
           <Route path="/dashboard/groups/:id" element={<GroupDetail />} />
           <Route path="/dashboard/settings" element={<Settings />} />
           <Route path="/dashboard/tasks" element={<Tasks />} />
+          <Route path="/dashboard/ppdu-brief" element={<PPDUBrief />} />
           <Route path="/upload-docs" element={<UploadPolicyDocs />} />
           <Route path="/populate-test-data" element={<PopulateTestData />} />
           <Route path="/cleanup-users" element={<CleanupUsers />} />

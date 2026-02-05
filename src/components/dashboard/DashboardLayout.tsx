@@ -2,7 +2,7 @@ import { ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Shield, FileText, Users, BarChart, Settings, LogOut, FileCheck, Hexagon, ListTodo, FileTextIcon } from "lucide-react";
+import { Shield, FileText, Users, BarChart, Settings, LogOut, FileCheck, Hexagon, ListTodo, FileEdit } from "lucide-react";
 import { toast } from "sonner";
 
 interface DashboardLayoutProps {
@@ -23,6 +23,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
     { icon: FileText, label: "Policies", href: "/dashboard/policies" },
     { icon: FileCheck, label: "Pending Attestations", href: "/dashboard/attestations" },
     { icon: ListTodo, label: "Tasks", href: "/dashboard/tasks" },
+    { icon: FileEdit, label: "PPDU Brief", href: "/dashboard/ppdu-brief" },
     { icon: Users, label: "Groups", href: "/dashboard/groups" },
     { icon: Settings, label: "Settings", href: "/dashboard/settings" }
   ];
@@ -59,7 +60,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
             ))}
           </aside>
 
-          <main className="flex-1">
+          <main className="flex-1 min-w-0 overflow-hidden">
             {children}
           </main>
         </div>

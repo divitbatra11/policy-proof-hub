@@ -113,7 +113,11 @@ const Tasks = () => {
         {/* Task Views */}
         {currentView === "grid" && <TaskGrid />}
         {currentView === "board" && <TaskBoard />}
-        {currentView === "timeline" && <TaskTimeline />}
+        {currentView === "timeline" && (
+          <div className="w-full overflow-hidden">
+            <TaskTimeline />
+          </div>
+        )}
 
         {/* Create Dialog */}
         <CreateTaskDialog

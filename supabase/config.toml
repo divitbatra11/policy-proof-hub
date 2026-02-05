@@ -1,10 +1,19 @@
-project_id = "objkmarvzsqqukzhtlda"
+project_id = "vxuwpajjbblsyhocnzxd"
 
-[functions.populate-test-data]
+[functions.add-users-to-group]
 verify_jwt = false
 
 [functions.cleanup-and-populate]
 verify_jwt = false
 
+[functions.cleanup-users]
+verify_jwt = false
+
+[functions.populate-test-data]
+verify_jwt = false
+
 [functions.upload-sample-policies]
+verify_jwt = false
+
+[functions.chat]
 verify_jwt = false
