@@ -19,6 +19,7 @@ import AddUsersToGroup from "./pages/AddUsersToGroup";
 import GroupDetail from "./pages/GroupDetail";
 import UploadSamplePolicies from "./pages/UploadSamplePolicies";
 import PopulatePolicySamples from "./pages/PopulatePolicySamples";
+import Tasks from "./pages/Tasks";
 
 const queryClient = new QueryClient();
 
@@ -38,6 +39,7 @@ const App = () => (
           <Route path="/dashboard/groups" element={<Groups />} />
           <Route path="/dashboard/groups/:id" element={<GroupDetail />} />
           <Route path="/dashboard/settings" element={<Settings />} />
+          <Route path="/dashboard/tasks" element={<Tasks />} />
           <Route path="/upload-docs" element={<UploadPolicyDocs />} />
           <Route path="/populate-test-data" element={<PopulateTestData />} />
           <Route path="/cleanup-users" element={<CleanupUsers />} />
