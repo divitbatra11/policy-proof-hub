@@ -3,10 +3,10 @@ import { ArrowRight, CheckCircle } from "lucide-react";
 import { Link } from "react-router-dom";
 
 const benefits = [
-  "99.9% uptime guarantee",
-  "Export audit reports in under 5 seconds",
-  "RBAC with encrypted data at rest and in transit",
-  "Responsive web and mobile access"
+  "Streamline policy development workflow",
+  "Track all policy distributions and acknowledgments",
+  "Maintain complete version history",
+  "Access from any device, anytime"
 ];
 
 const CTA = () => {
@@ -17,12 +17,12 @@ const CTA = () => {
       <div className="container mx-auto px-4 relative z-10">
         <div className="max-w-4xl mx-auto text-center space-y-8">
           <h2 className="text-4xl lg:text-5xl font-bold">
-            Ready to Prove Compliance with Confidence?
+            Get Started with PPDU Today
           </h2>
           
           <p className="text-xl opacity-90 max-w-2xl mx-auto">
-            Join public safety and healthcare organizations using APEX as their single source of truth 
-            for policy management and compliance.
+            Join the Community Corrections Branch in using PPDU as the central hub for policy 
+            and program management.
           </p>
           
           <div className="grid sm:grid-cols-2 gap-4 max-w-2xl mx-auto text-left my-8">

@@ -3,24 +3,24 @@ import { Card, CardContent } from "@/components/ui/card";
 
 const audiences = [
   {
-    title: "Law Enforcement",
-    roles: ["Police Departments", "Sheriff's Offices", "State Patrol"],
-    useCase: "Maintain defensible use-of-force and pursuit policies with complete audit trails."
+    title: "Community Corrections Leadership",
+    roles: ["Provincial Office", "Regional Offices", "Management Team"],
+    useCase: "Develop and distribute policies to all Community Corrections teams with full documentation and tracking."
   },
   {
-    title: "Fire & EMS",
-    roles: ["Fire Departments", "EMS Services", "Emergency Management"],
-    useCase: "Ensure all personnel acknowledge updated safety protocols and training requirements."
+    title: "Community Corrections Officers",
+    roles: ["Officers", "Supervisors", "Field Staff"],
+    useCase: "Access current policies, acknowledge receipt, and stay informed of all policy updates and changes."
   },
   {
-    title: "911 Communications",
-    roles: ["Dispatch Centers", "PSAP Operations", "Call Centers"],
-    useCase: "Track protocol updates and verify comprehension across all shift rotations."
+    title: "Program Managers",
+    roles: ["Program Development", "Operations", "Quality Assurance"],
+    useCase: "Track policy effectiveness, manage program updates, and ensure consistent implementation across regions."
   },
   {
-    title: "Healthcare Teams",
-    roles: ["Hospitals", "Clinics", "Care Facilities"],
-    useCase: "Prove HIPAA and clinical policy compliance during audits and investigations."
+    title: "Administrative Support",
+    roles: ["HR", "Compliance", "Records Management"],
+    useCase: "Maintain complete records of all policy distributions and acknowledgments for compliance and audits."
   }
 ];
 
@@ -30,10 +30,10 @@ const TargetAudience = () => {
       <div className="container mx-auto px-4">
         <div className="text-center mb-16 space-y-4">
           <h2 className="text-4xl font-bold text-foreground">
-            Built for Mission-Critical Organizations
+            Designed for Community Corrections Branch
           </h2>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            APEX serves public safety and healthcare teams who need defensible proof of policy compliance.
+            PPDU is built for all teams in the Community Corrections Branch to collaborate on policy development and implementation.
           </p>
         </div>
         

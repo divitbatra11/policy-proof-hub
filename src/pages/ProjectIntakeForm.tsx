@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,20 +18,6 @@ import {
 const ProjectIntakeForm = () => {
   const [formData, setFormData] = useState<IntakeFormData>({ ...EMPTY_INTAKE_FORM });
   const [isDownloading, setIsDownloading] = useState(false);
-  const [logoBase64, setLogoBase64] = useState<string | undefined>(undefined);
-
-  // Load logo as base64 on mount for DOCX header embedding
-  useEffect(() => {
-    fetch("/alberta-logo.png")
-      .then((res) => res.blob())
-      .then((blob) => {
-        const reader = new FileReader();
-        reader.onloadend = () => setLogoBase64(reader.result as string);
-        reader.readAsDataURL(blob);
-      })
-      .catch(() => console.warn("Could not load logo for DOCX header"));
-  }, []);
-
 
   // --- Field updaters ---
   const updateField = <K extends keyof IntakeFormData>(key: K, value: IntakeFormData[K]) => {
@@ -82,10 +68,8 @@ const ProjectIntakeForm = () => {
       const htmlContent = generateIntakeFormHtml(formData);
       const convert = await loadHTMLToDOCX();
 
-      // Build header HTML with logo for the converter's native header support
-      const headerHtml = logoBase64
-        ? `<div style="text-align: right;"><img src="${logoBase64}" width="200" height="50" /></div>`
-        : `<p style="text-align: right; font-family: Calibri, sans-serif; font-size: 10pt;">Alberta Public Safety and Emergency Services</p>`;
+      // Header with organization text only (no image processing)
+      const headerHtml = `<p style="text-align: center; font-family: Calibri, sans-serif; font-size: 13pt; margin: 0;">Alberta Public Safety and Emergency Services</p>`;
 
       const docxBlob = await convert(htmlContent, headerHtml, {
         table: { row: { cantSplit: true } },
@@ -94,6 +78,7 @@ const ProjectIntakeForm = () => {
         header: true,
         headerType: "default",
       });
+
       const url = URL.createObjectURL(docxBlob as Blob);
       const a = document.createElement("a");
       a.href = url;
@@ -103,6 +88,7 @@ const ProjectIntakeForm = () => {
       a.download = fileName;
       a.click();
       URL.revokeObjectURL(url);
+
       toast.success("Intake form downloaded as DOCX");
     } catch (error) {
       console.error("Error generating DOCX:", error);

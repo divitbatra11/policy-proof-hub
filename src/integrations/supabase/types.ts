@@ -497,6 +497,51 @@ export type Database = {
           },
         ]
       }
+      ppdu_briefs: {
+        Row: {
+          content: string
+          created_at: string | null
+          created_by: string | null
+          id: string
+          title: string
+          updated_at: string | null
+          updated_by: string | null
+        }
+        Insert: {
+          content?: string
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          title?: string
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Update: {
+          content?: string
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          title?: string
+          updated_at?: string | null
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ppdu_briefs_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ppdu_briefs_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string
@@ -582,6 +627,7 @@ export type Database = {
           due_date: string | null
           id: string
           priority: Database["public"]["Enums"]["task_priority"]
+          start_date: string | null
           status: Database["public"]["Enums"]["task_status"]
           tags: string[] | null
           title: string
@@ -595,6 +641,7 @@ export type Database = {
           due_date?: string | null
           id?: string
           priority?: Database["public"]["Enums"]["task_priority"]
+          start_date?: string | null
           status?: Database["public"]["Enums"]["task_status"]
           tags?: string[] | null
           title: string
@@ -608,6 +655,7 @@ export type Database = {
           due_date?: string | null
           id?: string
           priority?: Database["public"]["Enums"]["task_priority"]
+          start_date?: string | null
           status?: Database["public"]["Enums"]["task_status"]
           tags?: string[] | null
           title?: string
@@ -625,10 +673,41 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      assessment_question_options_public: {
+        Row: {
+          created_at: string | null
+          id: string | null
+          option_order: number | null
+          option_text: string | null
+          question_id: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string | null
+          option_order?: number | null
+          option_text?: string | null
+          question_id?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string | null
+          option_order?: number | null
+          option_text?: string | null
+          question_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assessment_question_options_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "assessment_questions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
-      [_ in never]: never
+      uuid_generate_v4: { Args: never; Returns: string }
     }
     Enums: {
       policy_status: "draft" | "review" | "published" | "archived"

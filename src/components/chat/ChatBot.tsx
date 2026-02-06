@@ -160,7 +160,7 @@ const ChatBot = () => {
               <MessageCircle className="h-4 w-4 text-primary-foreground" />
             </div>
             <div>
-              <h3 className="font-semibold text-sm">APEX Assistant</h3>
+              <h3 className="font-semibold text-sm">PPDU Assistant</h3>
               <p className="text-xs text-muted-foreground">Ask me anything</p>
             </div>
           </div>

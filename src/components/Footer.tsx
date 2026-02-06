@@ -9,12 +9,12 @@ const Footer = () => {
             <div className="flex items-center gap-3">
               <div className="relative">
                 <Hexagon className="h-10 w-10 text-primary fill-primary/20" strokeWidth={2} />
-                <span className="absolute inset-0 flex items-center justify-center text-sm font-bold text-primary">A</span>
+                <span className="absolute inset-0 flex items-center justify-center text-sm font-bold text-primary">P</span>
               </div>
-              <span className="text-2xl font-bold text-foreground tracking-tight">APEX</span>
+              <span className="text-2xl font-bold text-foreground tracking-tight">PPDU</span>
             </div>
             <p className="text-muted-foreground">
-              The single source of truth for policy compliance in public safety and healthcare.
+              Policy and program management tool for the Community Corrections Branch.
             </p>
           </div>
           
@@ -22,7 +22,7 @@ const Footer = () => {
             <h4 className="font-semibold text-foreground mb-4">Product</h4>
             <ul className="space-y-2 text-muted-foreground">
               <li><a href="#features" className="hover:text-primary transition-colors">Features</a></li>
-              <li><a href="#pricing" className="hover:text-primary transition-colors">Pricing</a></li>
+              <li><a href="/team" className="hover:text-primary transition-colors">Meet The Team</a></li>
               <li><a href="#integrations" className="hover:text-primary transition-colors">Integrations</a></li>
               <li><a href="#security" className="hover:text-primary transition-colors">Security</a></li>
             </ul>
@@ -51,7 +51,7 @@ const Footer = () => {
         
         <div className="border-t border-border pt-8 flex flex-col md:flex-row justify-between items-center gap-4">
           <p className="text-muted-foreground text-sm">
-            © 2025 APEX - Alberta Policy EXchange. All rights reserved.
+            © 2025 PPDU - Policy and Programs Development Unit. All rights reserved.
           </p>
           <div className="flex gap-6 text-sm text-muted-foreground">
             <a href="#privacy" className="hover:text-primary transition-colors">Privacy Policy</a>

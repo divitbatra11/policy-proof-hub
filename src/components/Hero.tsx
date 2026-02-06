@@ -13,18 +13,18 @@ const Hero = () => {
           <div className="space-y-8">
             <div className="inline-block">
               <span className="bg-primary/10 text-primary px-4 py-2 rounded-full text-sm font-semibold border border-primary/20">
-                Policy Management Reimagined
+                Centralized Policy Management
               </span>
             </div>
             
             <h1 className="text-5xl lg:text-6xl font-bold leading-tight text-foreground">
-              Publish. Prove. Protect.
+              Develop. Distribute. Document.
             </h1>
             
             <p className="text-xl text-muted-foreground leading-relaxed">
-              The single source of truth connecting policy with training and accreditation. 
-              Publish the right policy to the right people, prove they saw it, and retrieve 
-              defensible records on demand.
+              The internal policy and program management tool for the Policy and Programs Development Unit. 
+              Streamline policy development, distribution to teams, and maintain complete documentation 
+              of all changes and acknowledgments.
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4">
@@ -43,18 +43,18 @@ const Hero = () => {
             
             <div className="flex items-center gap-8 pt-4">
               <div className="text-center">
-                <div className="text-3xl font-bold text-primary">99.9%</div>
-                <div className="text-sm text-muted-foreground">Uptime</div>
-              </div>
-              <div className="h-12 w-px bg-border"></div>
-              <div className="text-center">
-                <div className="text-3xl font-bold text-primary">&lt;5s</div>
-                <div className="text-sm text-muted-foreground">Report Export</div>
+                <div className="text-3xl font-bold text-primary">1000+</div>
+                <div className="text-sm text-muted-foreground">Policies Managed</div>
               </div>
               <div className="h-12 w-px bg-border"></div>
               <div className="text-center">
                 <div className="text-3xl font-bold text-primary">100%</div>
-                <div className="text-sm text-muted-foreground">Audit Ready</div>
+                <div className="text-sm text-muted-foreground">Version Control</div>
+              </div>
+              <div className="h-12 w-px bg-border"></div>
+              <div className="text-center">
+                <div className="text-3xl font-bold text-primary">Real-time</div>
+                <div className="text-sm text-muted-foreground">Tracking</div>
               </div>
             </div>
           </div>
@@ -63,7 +63,7 @@ const Hero = () => {
             <div className="absolute -inset-4 bg-gradient-to-r from-primary/20 to-accent/20 rounded-2xl blur-2xl"></div>
             <img 
               src={heroImage} 
-              alt="APEX Dashboard - Policy Management Platform" 
+              alt="PPDU Dashboard - Policy Management Platform" 
               className="relative rounded-2xl shadow-2xl w-full"
             />
           </div>

@@ -4,33 +4,33 @@ import { Card, CardContent } from "@/components/ui/card";
 const features = [
   {
     icon: FileCheck,
-    title: "Central Policy Repository",
-    description: "One live version, automatic archiving. Search and access policies instantly on any device."
+    title: "Central Policy Library",
+    description: "Single source for all policies with automatic versioning and archiving. Easy access across all teams."
   },
   {
     icon: Users,
-    title: "Targeted Distribution",
-    description: "Assign policies to specific groups and roles. Track real-time attestation status and completion."
+    title: "Team Distribution",
+    description: "Assign policies to Community Corrections teams and regions. Track who has received and acknowledged each policy."
   },
   {
     icon: Shield,
-    title: "Immutable Audit Trail",
-    description: "Complete logs of who received, opened, and signed. Timestamp and version tracking for defensible records."
+    title: "Complete Documentation",
+    description: "Full audit trail of all policy changes, distributions, and acknowledgments. Maintain compliance records."
   },
   {
     icon: ClipboardCheck,
-    title: "Comprehension Testing",
-    description: "Attach assessments to policies. Record pass/fail scores alongside signatures for compliance proof."
+    title: "Policy Approval Workflow",
+    description: "Streamlined draft, review, and approval process. Track policy through development lifecycle."
   },
   {
     icon: Clock,
-    title: "Simple Workflow",
-    description: "Streamlined Draft → Review → Publish process. Lightweight approval chain without complex routing."
+    title: "Version Control",
+    description: "Track all policy iterations with change histories. Understand what changed and when."
   },
   {
     icon: Lock,
-    title: "Compliance Ready",
-    description: "Export audit reports in seconds. Show exactly who saw what, when, and their comprehension scores."
+    title: "Secure & Organized",
+    description: "Controlled access by role. Categorize policies for easy navigation and management."
   }
 ];
 
@@ -40,10 +40,10 @@ const Features = () => {
       <div className="container mx-auto px-4">
         <div className="text-center mb-16 space-y-4">
           <h2 className="text-4xl font-bold text-foreground">
-            Everything You Need for Policy Compliance
+            Tools for Effective Policy Management
           </h2>
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-            Built specifically for public safety and healthcare teams who must prove policy compliance under audits and investigations.
+            Built for the Community Corrections Branch to streamline policy development, distribution, and tracking across all teams.
           </p>
         </div>
         

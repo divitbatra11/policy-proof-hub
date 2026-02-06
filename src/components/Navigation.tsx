@@ -10,9 +10,9 @@ const Navigation = () => {
           <div className="flex items-center gap-3">
             <div className="relative">
               <Hexagon className="h-9 w-9 text-primary fill-primary/20" strokeWidth={2} />
-              <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-primary">A</span>
+              <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-primary">P</span>
             </div>
-            <span className="text-2xl font-bold text-foreground tracking-tight">APEX</span>
+            <span className="text-2xl font-bold text-foreground tracking-tight">PPDU</span>
           </div>
           
           <div className="hidden md:flex items-center gap-8">
@@ -22,8 +22,8 @@ const Navigation = () => {
             <a href="#who-we-serve" className="text-foreground hover:text-primary transition-colors font-medium">
               Who We Serve
             </a>
-            <a href="#pricing" className="text-foreground hover:text-primary transition-colors font-medium">
-              Pricing
+            <a href="/team" className="text-foreground hover:text-primary transition-colors font-medium">
+              Meet The Team
             </a>
             <a href="#resources" className="text-foreground hover:text-primary transition-colors font-medium">
               Resources
