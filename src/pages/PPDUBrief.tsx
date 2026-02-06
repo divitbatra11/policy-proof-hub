@@ -236,8 +236,8 @@ const PPDUBrief = () => {
           saveStatus={saveStatus}
         />
 
-        <Card className="shadow-lg">
-          <CardContent className="p-0">
+        <Card className="shadow-lg w-full overflow-hidden">
+          <CardContent className="p-0 w-full overflow-x-auto">
             <PPDUEditor
               content={content}
               onContentChange={setContent}

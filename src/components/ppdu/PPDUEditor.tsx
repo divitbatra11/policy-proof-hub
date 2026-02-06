@@ -93,7 +93,21 @@ const PPDUEditor = ({ content, onContentChange }: PPDUEditorProps) => {
       return;
     }
     if (editorRef.current && editorRef.current.innerHTML !== content) {
-      editorRef.current.innerHTML = content;
+      // Strip out HTML document wrapper if present (from intake forms)
+      let cleanContent = content;
+      
+      // If content contains full HTML document structure, extract only the body content
+      if (content.includes('<!DOCTYPE html>') || content.includes('<html>')) {
+        const bodyMatch = content.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+        if (bodyMatch && bodyMatch[1]) {
+          cleanContent = bodyMatch[1];
+        }
+      }
+      
+      // Also strip out any <style> tags that might affect the parent layout
+      cleanContent = cleanContent.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
+      
+      editorRef.current.innerHTML = cleanContent;
     }
   }, [content]);
 
@@ -535,11 +549,12 @@ const PPDUEditor = ({ content, onContentChange }: PPDUEditorProps) => {
       <div
         ref={editorRef}
         contentEditable
-        className="min-h-[600px] p-8 focus:outline-none"
+        className="min-h-[600px] max-w-full p-8 focus:outline-none overflow-x-auto [&_table]:max-w-full [&_table]:table-auto"
         style={{
           fontFamily: "Calibri, Arial, sans-serif",
           fontSize: "11pt",
           lineHeight: "1.5",
+          width: "100%",
         }}
         onInput={handleInput}
         onPaste={(e) => {

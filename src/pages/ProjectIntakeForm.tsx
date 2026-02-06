@@ -6,8 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { Download, Plus, Trash2, FileText, Loader2 } from "lucide-react";
+import { Download, Plus, Trash2, FileText, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import loadHTMLToDOCX from "@/utils/htmlToDocx";
 import {
   type IntakeFormData,
@@ -18,6 +19,7 @@ import {
 const ProjectIntakeForm = () => {
   const [formData, setFormData] = useState<IntakeFormData>({ ...EMPTY_INTAKE_FORM });
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // --- Field updaters ---
   const updateField = <K extends keyof IntakeFormData>(key: K, value: IntakeFormData[K]) => {
@@ -98,6 +100,103 @@ const ProjectIntakeForm = () => {
     }
   };
 
+  // --- Save to Project Library ---
+  const handleSave = async () => {
+    if (!formData.projectName.trim()) {
+      toast.error("Please enter a project name");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      // Get current user session
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
+        toast.error("You must be logged in to save");
+        return;
+      }
+
+      const user = session.user;
+
+      // Generate DOCX file
+      const htmlContent = generateIntakeFormHtml(formData);
+      const convert = await loadHTMLToDOCX();
+      const headerHtml = `<p style="text-align: center; font-family: Calibri, sans-serif; font-size: 13pt; margin: 0;">Alberta Public Safety and Emergency Services</p>`;
+
+      const docxBlob = await convert(htmlContent, headerHtml, {
+        table: { row: { cantSplit: true } },
+        font: "Calibri",
+        fontSize: 26,
+        header: true,
+        headerType: "default",
+      }) as Blob;
+
+      // Create a unique ID for this project
+      const projectId = crypto.randomUUID();
+      
+      // Upload DOCX to storage using a simpler path structure (similar to policies)
+      const timestamp = Date.now();
+      const sanitizedName = formData.projectName.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_-]/g, "");
+      const fileName = `${projectId}/${timestamp}-${sanitizedName}.docx`;
+      
+      const { error: uploadError, data: uploadData } = await supabase.storage
+        .from("policy-documents")
+        .upload(fileName, docxBlob, {
+          contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          upsert: false
+        });
+
+      if (uploadError) {
+        console.error("Storage upload error:", uploadError);
+        throw new Error(`Storage upload failed: ${uploadError.message}`);
+      }
+
+      // Get signed URL for the uploaded file
+      const { data: urlData, error: urlError } = await supabase.storage
+        .from("policy-documents")
+        .createSignedUrl(fileName, 31536000); // 1 year expiry
+
+      if (urlError) {
+        console.error("Error creating signed URL:", urlError);
+        throw new Error(`Failed to create signed URL: ${urlError.message}`);
+      }
+
+      const fileUrl = urlData?.signedUrl || "";
+
+      // Save form metadata to database (including html_content for formatted display)
+      const { error: dbError } = await supabase
+        .from("project_intake_forms")
+        .insert({
+          id: projectId,
+          title: formData.projectName,
+          project_name: formData.projectName,
+          file_url: fileUrl,
+          file_path: fileName,
+          file_name: `${formData.projectName}.docx`,
+          file_size: docxBlob.size,
+          form_data: formData as any,
+          html_content: htmlContent,
+          created_by: user.id,
+          updated_by: user.id
+        });
+
+      if (dbError) {
+        console.error("Database insert error:", dbError);
+        throw new Error(`Database insert failed: ${dbError.message}`);
+      }
+
+      toast.success("Project saved to library!");
+      
+      // Reset form after save
+      handleReset();
+    } catch (error: any) {
+      console.error("Error saving project:", error);
+      toast.error(error.message || "Failed to save project");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleReset = () => {
     setFormData({ ...EMPTY_INTAKE_FORM });
     toast.success("Form reset");
@@ -115,6 +214,14 @@ const ProjectIntakeForm = () => {
           <div className="flex gap-2">
             <Button variant="outline" onClick={handleReset}>
               Clear Form
+            </Button>
+            <Button variant="secondary" onClick={handleSave} disabled={isSaving || !formData.projectName.trim()}>
+              {isSaving ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4 mr-2" />
+              )}
+              Save to Library
             </Button>
             <Button onClick={handleDownload} disabled={isDownloading}>
               {isDownloading ? (

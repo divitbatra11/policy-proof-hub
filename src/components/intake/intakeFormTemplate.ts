@@ -122,7 +122,7 @@ export function generateIntakeFormHtml(data: IntakeFormData): string {
   <h1 style="text-align: center; font-family: Calibri, sans-serif; font-size: 15pt; font-weight: bold; margin: 12px 0 16px 0;">Intake Form</h1>
 
   <!-- Project Name -->
-  <p><h1 style="text-align: center; font-family: Calibri, sans-serif; font-size: 15pt; font-weight: bold; margin: 12px 0 16px 0;">Project Name:</h1> ${data.projectName || ""}</p>
+  <p><h1 style="font-family: Calibri, sans-serif; font-size: 15pt; font-weight: bold; margin: 12px 0 16px 0;">Project Name:</h1> ${data.projectName || ""}</p>
 
   <!-- Overview / Background -->
   <h1 style="font-family: Calibri, sans-serif; font-size: 15pt; font-weight: bold; margin: 12px 0 16px 0;">Overview / Background</h1>

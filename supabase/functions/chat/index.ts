@@ -72,6 +72,13 @@ Deno.serve(async (req) => {
 ### Document Creation
 - **PPDU Brief**: Create policy briefs with auto-save functionality (saves every 2 seconds)
 - **Project Intake Form**: Structured form with sections for project overview, objectives, key dates, contributors, dependencies, communications plan, and evaluation
+  - **Save to Library**: Save completed intake forms to the Project Library for future reference
+  - **Download**: Export forms as DOCX documents
+- **Project Library**: Central repository for all saved project intake forms
+  - View all saved projects with search functionality
+  - Open and edit saved projects using Word editor
+  - Delete projects (admin only)
+  - Track creation and update dates
 - **DOCX Download**: Convert briefs and intake forms to downloadable Word documents
 
 ### User Roles & Permissions
@@ -88,6 +95,8 @@ Deno.serve(async (req) => {
 - Groups: /dashboard/groups
 - PPDU Brief: /dashboard/ppdu-brief
 - Project Intake: /dashboard/project-intake
+- Project Library: /dashboard/project-library
+- Project Details: /dashboard/project-library/:id (view/edit saved projects)
 - Settings: /dashboard/settings
 - Meet The Team: /team
 
