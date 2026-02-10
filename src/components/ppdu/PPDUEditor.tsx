@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect } from "react";
+import { useRef, useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Bold,
@@ -84,7 +84,70 @@ const HIGHLIGHT_COLORS = [
 
 const PPDUEditor = ({ content, onContentChange }: PPDUEditorProps) => {
   const editorRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const isInternalChange = useRef(false);
+  const [tableSections, setTableSections] = useState<{ top: number; tableIndex: number; label: string }[]>([]);
+
+  // Scan for h1/h2 headings followed by tables to position add-row buttons
+  const updateTableButtons = useCallback(() => {
+    if (!editorRef.current || !wrapperRef.current) return;
+    const headings = editorRef.current.querySelectorAll('h1, h2');
+    const editorRect = editorRef.current.getBoundingClientRect();
+    const wrapperRect = wrapperRef.current.getBoundingClientRect();
+    const sections: { top: number; tableIndex: number; label: string }[] = [];
+    let tableIdx = 0;
+
+    headings.forEach((heading) => {
+      // Find the next sibling that is a table
+      let sibling = heading.nextElementSibling;
+      while (sibling && sibling.tagName !== 'TABLE' && sibling.tagName !== 'H1' && sibling.tagName !== 'H2') {
+        sibling = sibling.nextElementSibling;
+      }
+      if (sibling?.tagName === 'TABLE') {
+        const headingRect = heading.getBoundingClientRect();
+        sections.push({
+          top: headingRect.top - wrapperRect.top + (headingRect.height / 2) - 12,
+          tableIndex: Array.from(editorRef.current!.querySelectorAll('table')).indexOf(sibling as HTMLTableElement),
+          label: heading.textContent || 'Table',
+        });
+      }
+    });
+
+    setTableSections(sections);
+  }, []);
+
+  // Update button positions on content changes and scroll
+  useEffect(() => {
+    const timer = setTimeout(updateTableButtons, 100);
+    return () => clearTimeout(timer);
+  }, [content, updateTableButtons]);
+
+  const addRowToTable = useCallback((tableIndex: number) => {
+    if (!editorRef.current) return;
+    const tables = editorRef.current.querySelectorAll('table');
+    const table = tables[tableIndex];
+    if (!table) return;
+
+    const lastRow = table.querySelector('tr:last-child');
+    if (!lastRow) return;
+
+    const newRow = document.createElement('tr');
+    const cells = lastRow.querySelectorAll('td, th');
+    cells.forEach((cell) => {
+      const newCell = document.createElement('td');
+      newCell.setAttribute('style', (cell as HTMLElement).style.cssText.replace(/font-weight:\s*bold;?/gi, ''));
+      newCell.innerHTML = '&nbsp;';
+      newRow.appendChild(newCell);
+    });
+
+    // Append to tbody or table directly
+    const tbody = table.querySelector('tbody') || table;
+    tbody.appendChild(newRow);
+
+    isInternalChange.current = true;
+    onContentChange(editorRef.current.innerHTML);
+    setTimeout(updateTableButtons, 50);
+  }, [onContentChange, updateTableButtons]);
 
   // Only sync content from parent when it changes externally (template load, import, etc.)
   useEffect(() => {
@@ -106,6 +169,9 @@ const PPDUEditor = ({ content, onContentChange }: PPDUEditorProps) => {
       
       // Also strip out any <style> tags that might affect the parent layout
       cleanContent = cleanContent.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
+      
+      // Strip out any embedded <button> elements (e.g. old "Add Row" buttons saved in content)
+      cleanContent = cleanContent.replace(/<button[^>]*>[\s\S]*?<\/button>/gi, '');
       
       editorRef.current.innerHTML = cleanContent;
     }
@@ -169,23 +235,21 @@ const PPDUEditor = ({ content, onContentChange }: PPDUEditorProps) => {
     execCommand("insertHTML", tableHtml);
   };
 
-  const insertStatusTable = () => {
+  const insertExecutiveQueueTable = () => {
     const tableHtml = `
-      <h2 style="font-weight: bold; font-size: 18px; margin: 24px 0 16px 0;">Status Summary</h2>
+      <h2 style="font-weight: bold; font-size: 18px; margin: 24px 0 16px 0;">Executive Queue</h2>
       <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
         <tr>
-          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 30%;">Item</th>
-          <th style="background-color: ${GREEN_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 15%;">On Track</th>
-          <th style="background-color: ${YELLOW_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 15%;">At Risk</th>
-          <th style="background-color: ${RED_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 15%;">Off Track</th>
-          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 25%;">Notes</th>
+          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 20%;">Project/Initiative</th>
+          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 10%;">Lead</th>
+          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 40%;">Summary</th>
+          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 30%;">Status/Next Steps</th>
         </tr>
         <tr>
-          <td style="border: 1px solid #000; padding: 8px; vertical-align: top;">Item 1</td>
-          <td style="border: 1px solid #000; padding: 8px; vertical-align: top; text-align: center;">✓</td>
-          <td style="border: 1px solid #000; padding: 8px; vertical-align: top; text-align: center;">&nbsp;</td>
-          <td style="border: 1px solid #000; padding: 8px; vertical-align: top; text-align: center;">&nbsp;</td>
-          <td style="border: 1px solid #000; padding: 8px; vertical-align: top;">&nbsp;</td>
+          <td style="border: 1px solid #000; padding: 8px; vertical-align: top; font-weight: bold;">Project Name</td>
+          <td style="border: 1px solid #000; padding: 8px; vertical-align: top; text-align: center;">Name</td>
+          <td style="border: 1px solid #000; padding: 8px; vertical-align: top;">Enter project summary here...</td>
+          <td style="border: 1px solid #000; padding: 8px; vertical-align: top;">Enter status and next steps...</td>
         </tr>
       </table>
       <p><br></p>
@@ -487,9 +551,9 @@ const PPDUEditor = ({ content, onContentChange }: PPDUEditorProps) => {
               <Plus className="h-4 w-4 mr-2" />
               Executive Summary Table
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => insertStatusTable()}>
+            <DropdownMenuItem onClick={() => insertExecutiveQueueTable()}>
               <Plus className="h-4 w-4 mr-2" />
-              Status Summary Table
+              Executive Queue Table
             </DropdownMenuItem>
             <DropdownMenuItem onClick={() => insertKeyDatesTable()}>
               <Plus className="h-4 w-4 mr-2" />
@@ -545,46 +609,65 @@ const PPDUEditor = ({ content, onContentChange }: PPDUEditorProps) => {
         <ToolbarButton onClick={() => execCommand("redo")} icon={Redo} title="Redo (Ctrl+Y)" />
       </div>
 
-      {/* Editor Area */}
-      <div
-        ref={editorRef}
-        contentEditable
-        className="min-h-[600px] max-w-full p-8 focus:outline-none overflow-x-auto [&_table]:max-w-full [&_table]:table-auto"
-        style={{
-          fontFamily: "Calibri, Arial, sans-serif",
-          fontSize: "11pt",
-          lineHeight: "1.5",
-          width: "100%",
-        }}
-        onInput={handleInput}
-        onPaste={(e) => {
-          // Allow rich paste for tables and formatting
-          const html = e.clipboardData.getData("text/html");
-          if (html) {
-            e.preventDefault();
-            document.execCommand("insertHTML", false, html);
-          }
-        }}
-        onKeyDown={(e) => {
-          // Handle keyboard shortcuts
-          if (e.ctrlKey || e.metaKey) {
-            switch (e.key.toLowerCase()) {
-              case 'b':
-                e.preventDefault();
-                execCommand("bold");
-                break;
-              case 'i':
-                e.preventDefault();
-                execCommand("italic");
-                break;
-              case 'u':
-                e.preventDefault();
-                execCommand("underline");
-                break;
+      {/* Editor Area with floating add-row buttons */}
+      <div ref={wrapperRef} className="relative">
+        <div
+          ref={editorRef}
+          contentEditable
+          className="min-h-[600px] max-w-full p-8 focus:outline-none overflow-x-auto [&_table]:max-w-full [&_table]:table-auto"
+          style={{
+            fontFamily: "Calibri, Arial, sans-serif",
+            fontSize: "11pt",
+            lineHeight: "1.5",
+            width: "100%",
+          }}
+          onInput={handleInput}
+          onPaste={(e) => {
+            // Allow rich paste for tables and formatting
+            const html = e.clipboardData.getData("text/html");
+            if (html) {
+              e.preventDefault();
+              document.execCommand("insertHTML", false, html);
             }
-          }
-        }}
-      />
+          }}
+          onKeyDown={(e) => {
+            // Handle keyboard shortcuts
+            if (e.ctrlKey || e.metaKey) {
+              switch (e.key.toLowerCase()) {
+                case 'b':
+                  e.preventDefault();
+                  execCommand("bold");
+                  break;
+                case 'i':
+                  e.preventDefault();
+                  execCommand("italic");
+                  break;
+                case 'u':
+                  e.preventDefault();
+                  execCommand("underline");
+                  break;
+              }
+            }
+          }}
+        />
+        {/* Floating Add Row buttons next to each table heading */}
+        {tableSections.map((section, i) => (
+          <button
+            key={`${section.tableIndex}-${i}`}
+            className="absolute right-3 flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors border border-primary/20 z-10"
+            style={{ top: section.top }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              addRowToTable(section.tableIndex);
+            }}
+            title={`Add row to ${section.label}`}
+          >
+            <Plus className="h-3 w-3" />
+            Add Row
+          </button>
+        ))}
+      </div>
     </div>
   );
 };

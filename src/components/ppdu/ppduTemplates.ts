@@ -1,7 +1,4 @@
 const HEADER_BG_COLOR = "#B4C6E7";
-const GREEN_BG_COLOR = "#E2EFDA";
-const YELLOW_BG_COLOR = "#FFF2CC";
-const RED_BG_COLOR = "#FCE4D6";
 
 export const PPDU_BRIEF_TEMPLATE = `
 <h1 style="font-weight: bold; font-size: 24px; margin-bottom: 8px; text-align: center;">PPDU Weekly Brief</h1>
@@ -29,20 +26,24 @@ export const PPDU_BRIEF_TEMPLATE = `
   </tr>
 </table>
 
-<h2 style="font-weight: bold; font-size: 18px; margin: 24px 0 16px 0;">Status Summary</h2>
+<h2 style="font-weight: bold; font-size: 18px; margin: 24px 0 16px 0;">Executive Queue</h2>
 <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
   <tr>
-    <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 30%;">Item</th>
-    <th style="background-color: ${GREEN_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 15%;">On Track</th>
-    <th style="background-color: ${YELLOW_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 15%;">At Risk</th>
-    <th style="background-color: ${RED_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 15%;">Off Track</th>
-    <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 25%;">Notes</th>
+    <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 20%;">Project/Initiative</th>
+    <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 10%;">Lead</th>
+    <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 40%;">Summary</th>
+    <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 30%;">Status/Next Steps</th>
   </tr>
   <tr>
-    <td style="border: 1px solid #000; padding: 8px; vertical-align: top;">Item 1</td>
-    <td style="border: 1px solid #000; padding: 8px; vertical-align: top; text-align: center;">✓</td>
+    <td style="border: 1px solid #000; padding: 8px; vertical-align: top; font-weight: bold;">Project Name</td>
+    <td style="border: 1px solid #000; padding: 8px; vertical-align: top; text-align: center;">Name</td>
+    <td style="border: 1px solid #000; padding: 8px; vertical-align: top;">Enter project summary here...</td>
+    <td style="border: 1px solid #000; padding: 8px; vertical-align: top;">Enter status and next steps...</td>
+  </tr>
+  <tr>
+    <td style="border: 1px solid #000; padding: 8px; vertical-align: top; font-weight: bold;">&nbsp;</td>
     <td style="border: 1px solid #000; padding: 8px; vertical-align: top; text-align: center;">&nbsp;</td>
-    <td style="border: 1px solid #000; padding: 8px; vertical-align: top; text-align: center;">&nbsp;</td>
+    <td style="border: 1px solid #000; padding: 8px; vertical-align: top;">&nbsp;</td>
     <td style="border: 1px solid #000; padding: 8px; vertical-align: top;">&nbsp;</td>
   </tr>
 </table>
