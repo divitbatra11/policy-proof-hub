@@ -12,6 +12,17 @@ dist
 dist-ssr
 *.local
 
+# Environment variables — never commit credentials
+.env
+.env.*
+!.env.example
+
+# One-off admin scripts with hardcoded credentials — never commit
+admin.js
+admin.ts
+*.secret.js
+*.secret.ts
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

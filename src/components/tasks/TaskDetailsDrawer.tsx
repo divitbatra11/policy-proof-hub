@@ -27,11 +27,43 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { format } from "date-fns";
-import { CalendarIcon, X, Pencil, Save, XCircle } from "lucide-react";
+import {
+  CalendarIcon,
+  X,
+  Pencil,
+  Save,
+  XCircle,
+  ExternalLink,
+  ChevronDown,
+  MoreHorizontal,
+  Copy,
+  Trash2,
+  Link2,
+  Plus,
+} from "lucide-react";
 import { useTask, useUpdateTask, useUpdateTaskAssignees, useUsers } from "@/hooks/useTasks";
+import { useAddTaskChecklistItem, useDeleteTaskChecklistItem, useTaskChecklist, useToggleTaskChecklistItem } from "@/hooks/useTaskChecklist";
+import {
+  deleteTaskAttachment,
+  getTaskAttachmentUrl,
+  isExternalAttachmentUrl,
+  normalizeExternalUrl,
+  uploadTaskAttachment,
+} from "@/utils/taskAttachments";
+import { supabase } from "@/integrations/supabase/client";
+
 import {
   TaskStatus,
+  TaskChecklistItem,
   TaskPriority,
   STATUS_LABELS,
   PRIORITY_LABELS,
@@ -39,19 +71,36 @@ import {
   PRIORITY_COLORS,
 } from "@/types/tasks";
 import { cn } from "@/lib/utils";
+import { TaskAttachmentIcon } from "./TaskAttachmentIcon";
 
 const updateTaskSchema = z.object({
-  title: z.string().min(3, "Title must be at least 3 characters").max(120, "Title must be less than 120 characters"),
+  title: z
+    .string()
+    .min(3, "Title must be at least 3 characters")
+    .max(120, "Title must be less than 120 characters"),
   description: z.string().optional(),
 });
 
 type FormData = z.infer<typeof updateTaskSchema>;
+
+type AttachmentMode = "file" | "link";
 
 interface TaskDetailsDrawerProps {
   taskId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
+
+const deriveNameFromUrl = (url: string) => {
+  try {
+    const withoutQuery = url.split("?")[0].split("#")[0];
+    const last = withoutQuery.split("/").pop() || "Attachment";
+    const decoded = decodeURIComponent(last);
+    return decoded || "Attachment";
+  } catch {
+    return "Attachment";
+  }
+};
 
 const TaskDetailsDrawer = ({ taskId, open, onOpenChange }: TaskDetailsDrawerProps) => {
   const [isEditing, setIsEditing] = useState(false);
@@ -60,7 +109,20 @@ const TaskDetailsDrawer = ({ taskId, open, onOpenChange }: TaskDetailsDrawerProp
   const [tagInput, setTagInput] = useState("");
   const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
 
+  const [attachmentsOpen, setAttachmentsOpen] = useState(true);
+  const [checklistOpen, setChecklistOpen] = useState(true);
+  const [newChecklistText, setNewChecklistText] = useState("");
+  const [attachmentMode, setAttachmentMode] = useState<AttachmentMode>("file");
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const [attachmentUrl, setAttachmentUrl] = useState<string>("");
+  const [attachmentDisplayName, setAttachmentDisplayName] = useState<string>("");
+  const [removeAttachment, setRemoveAttachment] = useState(false);
+
   const { data: task, isLoading } = useTask(taskId || undefined);
+  const { data: checklistItems = [], isLoading: checklistLoading } = useTaskChecklist(taskId || undefined);
+  const addChecklistItem = useAddTaskChecklistItem();
+  const toggleChecklistItem = useToggleTaskChecklistItem();
+  const deleteChecklistItem = useDeleteTaskChecklistItem();
   const { data: users = [] } = useUsers();
   const updateTask = useUpdateTask();
   const updateAssignees = useUpdateTaskAssignees();
@@ -76,19 +138,80 @@ const TaskDetailsDrawer = ({ taskId, open, onOpenChange }: TaskDetailsDrawerProp
 
   // Initialize form when task loads
   const initializeForm = () => {
-    if (task) {
-      reset({
-        title: task.title,
-        description: task.description || "",
-      });
-      setDueDate(task.due_date ? new Date(task.due_date) : undefined);
-      setTags(task.tags || []);
-      setSelectedAssignees(task.assignees?.map(a => a.user_id) || []);
+    if (!task) return;
+
+    reset({
+      title: task.title,
+      description: task.description || "",
+    });
+
+    setDueDate(task.due_date ? new Date(task.due_date) : undefined);
+    setTags(task.tags || []);
+    setSelectedAssignees(task.assignees?.map((a) => a.user_id) || []);
+
+    setAttachmentFile(null);
+    setRemoveAttachment(false);
+
+    if (task.attachment_path && isExternalAttachmentUrl(task.attachment_path)) {
+      setAttachmentMode("link");
+      setAttachmentUrl(task.attachment_path);
+      setAttachmentDisplayName(task.attachment_name || "");
+    } else {
+      setAttachmentMode("file");
+      setAttachmentUrl("");
+      setAttachmentDisplayName("");
     }
   };
 
   const onSubmit = async (data: FormData) => {
-    if (!taskId) return;
+    if (!taskId || !task) return;
+
+    let attachmentPath = task.attachment_path ?? null;
+    let attachmentName = task.attachment_name ?? null;
+
+    const previousAttachmentPath = attachmentPath;
+    const previousWasExternal = !!previousAttachmentPath && isExternalAttachmentUrl(previousAttachmentPath);
+
+    // Explicit remove
+    if (removeAttachment && attachmentPath) {
+      await deleteTaskAttachment(attachmentPath);
+      attachmentPath = null;
+      attachmentName = null;
+    }
+
+    // Upload a new file
+    if (attachmentFile) {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not authenticated");
+
+      const { filePath, fileName } = await uploadTaskAttachment({
+        file: attachmentFile,
+        taskId,
+        userId: user.id,
+      });
+
+      // If switching from an existing stored file to a new stored file, delete old storage object.
+      if (previousAttachmentPath && !previousWasExternal && previousAttachmentPath !== filePath) {
+        await deleteTaskAttachment(previousAttachmentPath);
+      }
+
+      attachmentPath = filePath;
+      attachmentName = fileName;
+    }
+
+    // Save a link
+    const normalizedUrl = attachmentMode === "link" ? normalizeExternalUrl(attachmentUrl) : "";
+    if (!attachmentFile && !removeAttachment && attachmentMode === "link" && normalizedUrl) {
+      // If switching away from a stored file to a link, delete the old stored file.
+      if (previousAttachmentPath && !previousWasExternal && previousAttachmentPath !== normalizedUrl) {
+        await deleteTaskAttachment(previousAttachmentPath);
+      }
+
+      attachmentPath = normalizedUrl;
+      attachmentName = attachmentDisplayName.trim() || deriveNameFromUrl(normalizedUrl);
+    }
 
     await updateTask.mutateAsync({
       taskId,
@@ -97,6 +220,8 @@ const TaskDetailsDrawer = ({ taskId, open, onOpenChange }: TaskDetailsDrawerProp
         description: data.description || null,
         due_date: dueDate?.toISOString() || null,
         tags,
+        attachment_name: attachmentName,
+        attachment_path: attachmentPath,
       },
     });
 
@@ -106,6 +231,35 @@ const TaskDetailsDrawer = ({ taskId, open, onOpenChange }: TaskDetailsDrawerProp
     });
 
     setIsEditing(false);
+  };
+
+  const openAttachment = async () => {
+    if (!task?.attachment_path) return;
+    const url = await getTaskAttachmentUrl(task.attachment_path);
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const copyAttachmentLink = async () => {
+    if (!task?.attachment_path) return;
+    const url = await getTaskAttachmentUrl(task.attachment_path);
+    await navigator.clipboard.writeText(url);
+  };
+
+  const removeAttachmentNow = async () => {
+    if (!taskId || !task?.attachment_path) return;
+
+    // Delete from storage only if needed (utility handles external links as no-op)
+    await deleteTaskAttachment(task.attachment_path);
+
+    await updateTask.mutateAsync({
+      taskId,
+      input: { attachment_name: null, attachment_path: null },
+    });
+
+    setAttachmentFile(null);
+    setAttachmentUrl("");
+    setAttachmentDisplayName("");
+    setRemoveAttachment(false);
   };
 
   const handleStatusChange = async (status: TaskStatus) => {
@@ -126,24 +280,55 @@ const TaskDetailsDrawer = ({ taskId, open, onOpenChange }: TaskDetailsDrawerProp
   };
 
   const removeTag = (tag: string) => {
-    setTags(tags.filter(t => t !== tag));
+    setTags(tags.filter((t) => t !== tag));
   };
 
   const toggleAssignee = (userId: string) => {
-    setSelectedAssignees(prev =>
-      prev.includes(userId)
-        ? prev.filter(id => id !== userId)
-        : [...prev, userId]
+    setSelectedAssignees((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
     );
   };
 
   const getInitials = (name: string) => {
-    return name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
   };
 
   const handleClose = () => {
     setIsEditing(false);
     onOpenChange(false);
+  };
+
+  const pendingLinkUrl = attachmentMode === "link" ? normalizeExternalUrl(attachmentUrl) : "";
+  const pendingLinkName = attachmentDisplayName.trim() || (pendingLinkUrl ? deriveNameFromUrl(pendingLinkUrl) : "");
+
+  const completedChecklistCount = checklistItems.filter((i) => i.is_completed).length;
+  const totalChecklistCount = checklistItems.length;
+
+  const handleAddChecklistItem = async () => {
+    if (!taskId) return;
+    const text = newChecklistText.trim();
+    if (!text) return;
+    await addChecklistItem.mutateAsync({ taskId, text });
+    setNewChecklistText("");
+  };
+
+  const handleToggleChecklistItem = async (item: TaskChecklistItem, checked: boolean) => {
+    if (!taskId) return;
+    await toggleChecklistItem.mutateAsync({
+      taskId,
+      itemId: item.id,
+      isCompleted: checked,
+    });
+  };
+
+  const handleDeleteChecklistItem = async (itemId: string) => {
+    if (!taskId) return;
+    await deleteChecklistItem.mutateAsync({ taskId, itemId });
   };
 
   return (
@@ -205,11 +390,7 @@ const TaskDetailsDrawer = ({ taskId, open, onOpenChange }: TaskDetailsDrawerProp
 
                   <div className="space-y-2">
                     <Label htmlFor="description">Description</Label>
-                    <Textarea
-                      id="description"
-                      {...register("description")}
-                      rows={4}
-                    />
+                    <Textarea id="description" {...register("description")} rows={4} />
                   </div>
 
                   <div className="space-y-2">
@@ -228,12 +409,7 @@ const TaskDetailsDrawer = ({ taskId, open, onOpenChange }: TaskDetailsDrawerProp
                         </Button>
                       </PopoverTrigger>
                       <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar
-                          mode="single"
-                          selected={dueDate}
-                          onSelect={setDueDate}
-                          initialFocus
-                        />
+                        <Calendar mode="single" selected={dueDate} onSelect={setDueDate} initialFocus />
                       </PopoverContent>
                     </Popover>
                   </div>
@@ -242,10 +418,7 @@ const TaskDetailsDrawer = ({ taskId, open, onOpenChange }: TaskDetailsDrawerProp
                     <Label>Assignees</Label>
                     <ScrollArea className="h-32 border rounded-md p-2">
                       {users.map((user) => (
-                        <div
-                          key={user.id}
-                          className="flex items-center space-x-2 py-1"
-                        >
+                        <div key={user.id} className="flex items-center space-x-2 py-1">
                           <Checkbox
                             id={`edit-${user.id}`}
                             checked={selectedAssignees.includes(user.id)}
@@ -277,12 +450,7 @@ const TaskDetailsDrawer = ({ taskId, open, onOpenChange }: TaskDetailsDrawerProp
                         }}
                         disabled={tags.length >= 6}
                       />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={addTag}
-                        disabled={tags.length >= 6}
-                      >
+                      <Button type="button" variant="outline" onClick={addTag} disabled={tags.length >= 6}>
                         Add
                       </Button>
                     </div>
@@ -303,6 +471,235 @@ const TaskDetailsDrawer = ({ taskId, open, onOpenChange }: TaskDetailsDrawerProp
                       </div>
                     )}
                   </div>
+
+                  {/* Attachments */}
+                  <div className="space-y-2">
+                    <Label>Attachments</Label>
+
+                    {(task.attachment_path && task.attachment_name && !removeAttachment && !attachmentFile) && (
+                      <div className="rounded-md border bg-muted/20 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <button
+                            type="button"
+                            className="flex items-start gap-3 text-left min-w-0 flex-1"
+                            onClick={openAttachment}
+                          >
+                            <TaskAttachmentIcon
+                              name={task.attachment_name}
+                              path={task.attachment_path}
+                            />
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium truncate">
+                                {task.attachment_name}
+                              </div>
+                              {isExternalAttachmentUrl(task.attachment_path) && (
+                                <div className="text-xs text-muted-foreground truncate">
+                                  {task.attachment_path}
+                                </div>
+                              )}
+                            </div>
+                          </button>
+
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setRemoveAttachment(true)}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant={attachmentMode === "file" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => {
+                          setAttachmentMode("file");
+                          setAttachmentUrl("");
+                          setAttachmentDisplayName("");
+                          setRemoveAttachment(false);
+                        }}
+                      >
+                        Upload file
+                      </Button>
+                      <Button
+                        type="button"
+                        variant={attachmentMode === "link" ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => {
+                          setAttachmentMode("link");
+                          setAttachmentFile(null);
+                          setRemoveAttachment(false);
+                        }}
+                      >
+                        Add link
+                      </Button>
+                    </div>
+
+                    {attachmentMode === "file" ? (
+                      <Input
+                        id="attachment"
+                        type="file"
+                        onChange={(e) => {
+                          setAttachmentFile(e.target.files?.[0] ?? null);
+                          if (e.target.files?.[0]) {
+                            setRemoveAttachment(false);
+                            setAttachmentUrl("");
+                            setAttachmentDisplayName("");
+                          }
+                        }}
+                        accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.png,.jpg,.jpeg"
+                      />
+                    ) : (
+                      <div className="space-y-2">
+                        <Input
+                          value={attachmentDisplayName}
+                          onChange={(e) => setAttachmentDisplayName(e.target.value)}
+                          placeholder="Display name (e.g., DRAFT_Duress Alarm Policy)"
+                        />
+                        <div className="relative">
+                          <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <Input
+                            value={attachmentUrl}
+                            onChange={(e) => setAttachmentUrl(e.target.value)}
+                            placeholder="https://..."
+                            className="pl-9"
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {attachmentFile && (
+                      <div className="rounded-md border bg-muted/20 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-3 min-w-0 flex-1">
+                            <TaskAttachmentIcon name={attachmentFile.name} path={null} />
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium truncate">{attachmentFile.name}</div>
+                              <div className="text-xs text-muted-foreground">(upload)</div>
+                            </div>
+                          </div>
+                          <Button type="button" variant="ghost" size="sm" onClick={() => setAttachmentFile(null)}>
+                            Remove
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
+                    {!attachmentFile && attachmentMode === "link" && pendingLinkUrl && (
+                      <div className="rounded-md border bg-muted/20 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-3 min-w-0 flex-1">
+                            <TaskAttachmentIcon name={pendingLinkName} path={pendingLinkUrl} />
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium truncate">{pendingLinkName}</div>
+                              <div className="text-xs text-muted-foreground truncate">{pendingLinkUrl}</div>
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setAttachmentUrl("");
+                              setAttachmentDisplayName("");
+                            }}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                 <Collapsible open={checklistOpen} onOpenChange={setChecklistOpen}>
+      <div className="flex items-center justify-between">
+        <CollapsibleTrigger asChild>
+          <button type="button" className="flex items-center gap-2 text-sm font-medium">
+            <ChevronDown
+              className={cn(
+                "h-4 w-4 transition-transform",
+                !checklistOpen && "-rotate-90"
+              )}
+            />
+            Checklist
+          </button>
+        </CollapsibleTrigger>
+
+        <Badge variant="secondary" className="text-xs h-5 px-1.5">
+          {totalChecklistCount === 0 ? "0" : `${completedChecklistCount}/${totalChecklistCount}`}
+        </Badge>
+      </div>
+
+      <CollapsibleContent className="mt-2 space-y-2">
+        {checklistLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-5/6" />
+          </div>
+        ) : totalChecklistCount === 0 ? (
+          <p className="text-sm text-muted-foreground">No checklist items</p>
+        ) : (
+          <div className="space-y-2">
+            {checklistItems.map((item) => (
+              <div key={item.id} className="flex items-start gap-2">
+                <Checkbox
+                  checked={item.is_completed}
+                  onCheckedChange={(checked) =>
+                    handleToggleChecklistItem(item, !!checked)
+                  }
+                />
+                <span
+                  className={cn(
+                    "text-sm flex-1 leading-snug",
+                    item.is_completed && "line-through text-muted-foreground"
+                  )}
+                >
+                  {item.item_text}
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => handleDeleteChecklistItem(item.id)}
+                  title="Remove item"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex gap-2 pt-1">
+          <Input
+            value={newChecklistText}
+            onChange={(e) => setNewChecklistText(e.target.value)}
+            placeholder="Add checklist item"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                handleAddChecklistItem();
+              }
+            }}
+          />
+          <Button
+            type="button"
+            size="sm"
+            onClick={handleAddChecklistItem}
+            disabled={!newChecklistText.trim() || addChecklistItem.isPending}
+          >
+            <Plus className="h-4 w-4 mr-1" />
+            Add
+          </Button>
+        </div>
+      </CollapsibleContent>
+    </Collapsible>
 
                   <Button type="submit" className="w-full" disabled={updateTask.isPending}>
                     <Save className="h-4 w-4 mr-2" />
@@ -329,7 +726,9 @@ const TaskDetailsDrawer = ({ taskId, open, onOpenChange }: TaskDetailsDrawerProp
                         </SelectTrigger>
                         <SelectContent>
                           {Object.entries(STATUS_LABELS).map(([value, label]) => (
-                            <SelectItem key={value} value={value}>{label}</SelectItem>
+                            <SelectItem key={value} value={value}>
+                              {label}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -343,7 +742,9 @@ const TaskDetailsDrawer = ({ taskId, open, onOpenChange }: TaskDetailsDrawerProp
                         </SelectTrigger>
                         <SelectContent>
                           {Object.entries(PRIORITY_LABELS).map(([value, label]) => (
-                            <SelectItem key={value} value={value}>{label}</SelectItem>
+                            <SelectItem key={value} value={value}>
+                              {label}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -362,7 +763,10 @@ const TaskDetailsDrawer = ({ taskId, open, onOpenChange }: TaskDetailsDrawerProp
                     {task.assignees && task.assignees.length > 0 ? (
                       <div className="flex flex-wrap gap-2">
                         {task.assignees.map((assignee) => (
-                          <div key={assignee.id} className="flex items-center gap-2 bg-muted rounded-full px-3 py-1">
+                          <div
+                            key={assignee.id}
+                            className="flex items-center gap-2 bg-muted rounded-full px-3 py-1"
+                          >
                             <Avatar className="h-5 w-5">
                               <AvatarFallback className="text-xs">
                                 {getInitials(assignee.user?.full_name || "?")}
@@ -382,11 +786,188 @@ const TaskDetailsDrawer = ({ taskId, open, onOpenChange }: TaskDetailsDrawerProp
                       <Label>Tags</Label>
                       <div className="flex flex-wrap gap-1">
                         {task.tags.map((tag) => (
-                          <Badge key={tag} variant="outline">{tag}</Badge>
+                          <Badge key={tag} variant="outline">
+                            {tag}
+                          </Badge>
                         ))}
                       </div>
                     </div>
                   )}
+
+                  {/* Attachments section */}
+                  <Collapsible open={attachmentsOpen} onOpenChange={setAttachmentsOpen}>
+                    <div className="flex items-center justify-between">
+                      <CollapsibleTrigger asChild>
+                        <button
+                          type="button"
+                          className="flex items-center gap-2 text-sm font-medium"
+                        >
+                          <ChevronDown
+                            className={cn(
+                              "h-4 w-4 transition-transform",
+                              !attachmentsOpen && "-rotate-90"
+                            )}
+                          />
+                          Attachments
+                        </button>
+                      </CollapsibleTrigger>
+
+                      {task.attachment_path && task.attachment_name && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={openAttachment}>
+                              <ExternalLink className="mr-2 h-4 w-4" />
+                              Open
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={copyAttachmentLink}>
+                              <Copy className="mr-2 h-4 w-4" />
+                              Copy link
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              onClick={removeAttachmentNow}
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Remove
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
+                    </div>
+
+                    <CollapsibleContent className="mt-2 space-y-2">
+                      {task.attachment_path && task.attachment_name ? (
+                        <div className="rounded-md border bg-muted/20 p-3">
+                          <button
+                            type="button"
+                            onClick={openAttachment}
+                            className="flex items-start gap-3 text-left w-full"
+                          >
+                            <TaskAttachmentIcon
+                              name={task.attachment_name}
+                              path={task.attachment_path}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <div className="text-sm font-medium truncate">
+                                {task.attachment_name}
+                              </div>
+                              {isExternalAttachmentUrl(task.attachment_path) && (
+                                <div className="text-xs text-muted-foreground truncate">
+                                  {task.attachment_path}
+                                </div>
+                              )}
+                            </div>
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">No attachments</p>
+                      )}
+
+                      {/* Word-like behavior: user can add attachments by clicking Edit */}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => {
+                          initializeForm();
+                          setIsEditing(true);
+                        }}
+                      >
+                        Add attachment
+                      </Button>
+                    </CollapsibleContent>
+                  </Collapsible>
+
+                  <Collapsible open={checklistOpen} onOpenChange={setChecklistOpen}>
+                    <div className="flex items-center justify-between">
+                      <CollapsibleTrigger asChild>
+                        <button type="button" className="flex items-center gap-2 text-sm font-medium">
+                          <ChevronDown
+                            className={cn(
+                              "h-4 w-4 transition-transform",
+                              !checklistOpen && "-rotate-90"
+                            )}
+                          />
+                          Checklist
+                        </button>
+                      </CollapsibleTrigger>
+
+                      <Badge variant="secondary" className="text-xs h-5 px-1.5">
+                        {totalChecklistCount === 0 ? "0" : `${completedChecklistCount}/${totalChecklistCount}`}
+                      </Badge>
+                    </div>
+
+                    <CollapsibleContent className="mt-2 space-y-2">
+                      {checklistLoading ? (
+                        <div className="space-y-2">
+                          <Skeleton className="h-4 w-full" />
+                          <Skeleton className="h-4 w-5/6" />
+                        </div>
+                      ) : totalChecklistCount === 0 ? (
+                        <p className="text-sm text-muted-foreground">No checklist items</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {checklistItems.map((item) => (
+                            <div key={item.id} className="flex items-start gap-2">
+                              <Checkbox
+                                checked={item.is_completed}
+                                onCheckedChange={(checked) =>
+                                  handleToggleChecklistItem(item, !!checked)
+                                }
+                              />
+                              <span
+                                className={cn(
+                                  "text-sm flex-1 leading-snug",
+                                  item.is_completed && "line-through text-muted-foreground"
+                                )}
+                              >
+                                {item.item_text}
+                              </span>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7"
+                                onClick={() => handleDeleteChecklistItem(item.id)}
+                                title="Remove item"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="flex gap-2 pt-1">
+                        <Input
+                          value={newChecklistText}
+                          onChange={(e) => setNewChecklistText(e.target.value)}
+                          placeholder="Add checklist item"
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              handleAddChecklistItem();
+                            }
+                          }}
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={handleAddChecklistItem}
+                          disabled={!newChecklistText.trim() || addChecklistItem.isPending}
+                        >
+                          <Plus className="h-4 w-4 mr-1" />
+                          Add
+                        </Button>
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
 
                   <Separator />
 

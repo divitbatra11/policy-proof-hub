@@ -703,6 +703,7 @@ const UploadPolicyDocs = () => {
 
   const policyIdFromUrl = (searchParams.get("policyId") || "").trim();
   const lockedToPolicy = !!policyIdFromUrl;
+  const isPdfMode = searchParams.get("mode") === "pdf";
 
   const [isUploading, setIsUploading] = useState(false);
   const [uploadComplete, setUploadComplete] = useState(false);
@@ -758,6 +759,18 @@ const UploadPolicyDocs = () => {
   const onPickFile: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
     const f = e.target.files?.[0] ?? null;
     if (!f) return;
+
+    if (isPdfMode) {
+      if (!f.name.toLowerCase().endsWith(".pdf")) {
+        toast.error("Please select a .pdf file");
+        return;
+      }
+      setFile(f);
+      setUploadComplete(false);
+      toast.success("PDF selected. Fill in header fields, then click Upload PDF.");
+      return;
+    }
+
     if (!f.name.toLowerCase().endsWith(".docx")) {
       toast.error("Please select a .docx file");
       return;
@@ -766,7 +779,6 @@ const UploadPolicyDocs = () => {
     setUploadComplete(false);
 
     try {
-      console.log("[UploadPolicyDocs] Reading .docx…");
       console.log("[UploadPolicyDocs] Reading .docx…");
       const arrayBuffer = await f.arrayBuffer();
 
@@ -785,10 +797,7 @@ const UploadPolicyDocs = () => {
 
       if (messages?.length) console.info("[UploadPolicyDocs] Mammoth messages:", messages);
       toast.success("Document parsed. Review header fields, then Convert & Upload.");
-      if (messages?.length) console.info("[UploadPolicyDocs] Mammoth messages:", messages);
-      toast.success("Document parsed. Review header fields, then Convert & Upload.");
     } catch (err) {
-      console.error("[UploadPolicyDocs] DOCX parse error:", err);
       console.error("[UploadPolicyDocs] DOCX parse error:", err);
       toast.error("Failed to read the .docx file");
     }
@@ -913,12 +922,8 @@ const UploadPolicyDocs = () => {
   };
 
   const handleConvertAndUpload = async () => {
-    if (!file) toast.error("Please select a .docx file first");
-    if (!docHtml) toast.error("Nothing to convert (failed to parse?)");
-    if (!file || !docHtml) return;
-    if (!file) toast.error("Please select a .docx file first");
-    if (!docHtml) toast.error("Nothing to convert (failed to parse?)");
-    if (!file || !docHtml) return;
+    if (!file) { toast.error(isPdfMode ? "Please select a PDF file first" : "Please select a .docx file first"); return; }
+    if (!isPdfMode && !docHtml) { toast.error("Nothing to convert (failed to parse?)"); return; }
 
     setIsUploading(true);
     setUploadComplete(false);
@@ -982,27 +987,32 @@ const UploadPolicyDocs = () => {
         }
       }
 
-      // 1) Generate PDF
-      const pdfBlob = await generatePdfBlob();
-      const pdfName = makePdfName(file.name, number, subject);
+      // 1) Generate or use PDF
+      let pdfBlob: Blob;
+      let pdfName: string;
+
+      if (isPdfMode) {
+        pdfBlob = file;
+        pdfName = file.name;
+      } else {
+        pdfBlob = await generatePdfBlob();
+        pdfName = makePdfName(file.name, number, subject);
+      }
 
       // 2) Upload PDF to Storage
-      // 2) Upload PDF to Storage
       const path = `formatted/${Date.now()}_${pdfName}`;
-      console.log("[UploadPolicyDocs] Uploading to Storage path:", path);
       console.log("[UploadPolicyDocs] Uploading to Storage path:", path);
       const { error: upErr } = await supabase.storage
         .from("policy-documents")
         .upload(path, pdfBlob, { contentType: "application/pdf", upsert: false });
       if (upErr) throw new Error(`Storage upload failed: ${upErr.message}`);
-      if (upErr) throw new Error(`Storage upload failed: ${upErr.message}`);
 
-      // 3) Public URL (use signed URLs instead if your bucket is private)
-      // 3) Public URL (use signed URLs instead if your bucket is private)
+      // 3) Public URL
       const { data: pub } = supabase.storage.from("policy-documents").getPublicUrl(path);
       const publicUrl = pub?.publicUrl ?? null;
       console.log("[UploadPolicyDocs] Public URL:", publicUrl);
       if (!publicUrl) throw new Error("Could not obtain a public URL for the uploaded PDF. Is the bucket public?");
+
       // 4) Insert policy_versions
       const { data: inserted, error: insErr } = await supabase
         .from("policy_versions")
@@ -1026,7 +1036,6 @@ const UploadPolicyDocs = () => {
         .update({ current_version_id: versionId, status: "published" })
         .eq("id", ensuredPolicyId);
       if (updErr) {
-        // Fallback if 'published' isn't a valid enum value in your DB
         const { error: fallback } = await supabase
           .from("policies")
           .update({ current_version_id: versionId })
@@ -1035,10 +1044,7 @@ const UploadPolicyDocs = () => {
       }
 
       setUploadComplete(true);
-      toast.success("Policy created, converted to PDF, and linked!");
-      console.log("[UploadPolicyDocs] All done → redirect to detail");
-      navigate(`/dashboard/policies/${ensuredPolicyId}`);
-      toast.success("Policy created, converted to PDF, and linked!");
+      toast.success(isPdfMode ? "PDF uploaded and linked!" : "Policy created, converted to PDF, and linked!");
       console.log("[UploadPolicyDocs] All done → redirect to detail");
       navigate(`/dashboard/policies/${ensuredPolicyId}`);
     } catch (error: any) {
@@ -1057,26 +1063,25 @@ const UploadPolicyDocs = () => {
         <CardHeader>
           <CardTitle className="text-2xl flex items-center gap-2">
             <Upload className="h-6 w-6" />
-            Upload &amp; Format Policy (.docx → PDF)
+            {isPdfMode ? "Upload Policy (PDF)" : "Upload & Format Policy (.docx → PDF)"}
           </CardTitle>
           <CardDescription>
-            Select a Word document. We’ll clean the layout, standardize the header (Section/Number/Subject), render a
-            preview, convert to PDF, and upload it to Supabase Storage. If no Policy ID is provided, we’ll create a new
-            policy automatically, attach this file as a version, and publish it.
+            {isPdfMode
+              ? "Select a PDF file. Fill in the header fields (Section/Number/Subject), then upload directly to storage. If no Policy ID is provided, we'll create a new policy automatically."
+              : "Select a Word document. We'll clean the layout, standardize the header (Section/Number/Subject), render a preview, convert to PDF, and upload it to Supabase Storage. If no Policy ID is provided, we'll create a new policy automatically, attach this file as a version, and publish it."}
           </CardDescription>
         </CardHeader>
 
         <CardContent className="space-y-6">
-          <div className="text-xs text-muted-foreground">
-            Debug: file={String(!!file)}, htmlLen={docHtml.length}, btnDisabled=
-            {(!file || !docHtml || isUploading) ? "yes" : "no"}
-          </div>
-
           <div className="grid sm:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="docx">Word Document (.docx)</Label>
-              <Input id="docx" type="file" accept=".docx" onChange={onPickFile} />
-              <p className="text-xs text-muted-foreground">We’ll normalize headings, lists, spacing, and apply a consistent header.</p>
+              <Label htmlFor="fileInput">{isPdfMode ? "PDF Document (.pdf)" : "Word Document (.docx)"}</Label>
+              <Input id="fileInput" type="file" accept={isPdfMode ? ".pdf" : ".docx"} onChange={onPickFile} />
+              <p className="text-xs text-muted-foreground">
+                {isPdfMode
+                  ? "The PDF will be uploaded directly without conversion."
+                  : "We'll normalize headings, lists, spacing, and apply a consistent header."}
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -1111,7 +1116,6 @@ const UploadPolicyDocs = () => {
             <div className="space-y-2">
               <Label>Number</Label>
               <Input value={number} onChange={(e) => setNumber(e.target.value)} placeholder="e.g., 8.01.01" />
-              <Input value={number} onChange={(e) => setNumber(e.target.value)} placeholder="e.g., 8.01.01" />
             </div>
             <div className="space-y-2">
               <Label>Subject</Label>
@@ -1130,47 +1134,72 @@ const UploadPolicyDocs = () => {
             <AlertCircle className="h-5 w-5 mt-0.5" />
             <div className="text-sm">
               <p className="font-medium">Note:</p>
-              <p>You can remove this page later; it’s a one-time utility for converting legacy Word files.</p>
+              <p>{isPdfMode ? "Upload your existing PDF policy documents directly." : "You can remove this page later; it's a one-time utility for converting legacy Word files."}</p>
             </div>
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row">
-            <Button onClick={handleConvertAndUpload} disabled={!file || !docHtml || isUploading} size="lg" className="w-full sm:w-auto">
-              {isUploading ? "Converting & Uploading..." : "Convert to PDF & Upload"}
-            </Button>
             <Button
-              variant="outline"
-              onClick={() => {
-                const w = window.open();
-                if (!w) return;
-                w.document.open();
-                w.document.write(buildPdfHtml());
-                w.document.close();
-              }}
-              disabled={!docHtml}
+              onClick={handleConvertAndUpload}
+              disabled={!file || (!isPdfMode && !docHtml) || isUploading}
+              size="lg"
               className="w-full sm:w-auto"
             >
-              <FileText className="h-4 w-4 mr-2" />
-              Preview PDF (print view)
+              {isUploading
+                ? (isPdfMode ? "Uploading..." : "Converting & Uploading...")
+                : (isPdfMode ? "Upload PDF" : "Convert to PDF & Upload")}
             </Button>
+            {!isPdfMode && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const w = window.open();
+                  if (!w) return;
+                  w.document.open();
+                  w.document.write(buildPdfHtml());
+                  w.document.close();
+                }}
+                disabled={!docHtml}
+                className="w-full sm:w-auto"
+              >
+                <FileText className="h-4 w-4 mr-2" />
+                Preview PDF (print view)
+              </Button>
+            )}
           </div>
 
           <div>
-            <h3 className="text-sm font-medium text-muted-foreground mb-2">Formatted Preview</h3>
-            <div
-              ref={previewRef}
-              className="border rounded-lg p-5 max-h-[60vh] overflow-auto bg-white dark:bg-zinc-900"
-              dangerouslySetInnerHTML={{
-                __html: wrapWithPolicyTemplate({
-                  section,
-                  number,
-                  subject,
-                  bodyHtml: docHtml || "<p>(No content parsed)</p>",
-                  mode: "preview",
-                  drawDepartmentText: DRAW_DEPARTMENT_TEXT,
-                }),
-              }}
-            />
+            <h3 className="text-sm font-medium text-muted-foreground mb-2">
+              {isPdfMode ? "PDF Preview" : "Formatted Preview"}
+            </h3>
+            {isPdfMode ? (
+              file ? (
+                <object
+                  data={URL.createObjectURL(file)}
+                  type="application/pdf"
+                  className="w-full h-[60vh] border rounded-lg"
+                >
+                  <p className="p-4 text-muted-foreground">Unable to display PDF preview. Your browser may not support inline PDF viewing.</p>
+                </object>
+              ) : (
+                <div className="border rounded-lg p-5 text-muted-foreground">Select a PDF file to preview.</div>
+              )
+            ) : (
+              <div
+                ref={previewRef}
+                className="border rounded-lg p-5 max-h-[60vh] overflow-auto bg-white dark:bg-zinc-900"
+                dangerouslySetInnerHTML={{
+                  __html: wrapWithPolicyTemplate({
+                    section,
+                    number,
+                    subject,
+                    bodyHtml: docHtml || "<p>(No content parsed)</p>",
+                    mode: "preview",
+                    drawDepartmentText: DRAW_DEPARTMENT_TEXT,
+                  }),
+                }}
+              />
+            )}
           </div>
         </CardContent>
       </Card>

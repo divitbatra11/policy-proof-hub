@@ -47,6 +47,7 @@ import {
   ArrowUpDown,
   ChevronLeft,
   ChevronRight,
+
 } from "lucide-react";
 import { format, isPast, isToday } from "date-fns";
 import { useTasks, useUpdateTask, useDeleteTask, useUsers, useUpdateTaskAssignees } from "@/hooks/useTasks";
@@ -62,10 +63,12 @@ import {
   PRIORITY_COLORS,
 } from "@/types/tasks";
 import TaskDetailsDrawer from "./TaskDetailsDrawer";
+import { TaskAttachmentIcon } from "./TaskAttachmentIcon";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { getTaskAttachmentUrl } from "@/utils/taskAttachments";
 
 const TaskGrid = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -139,6 +142,11 @@ const TaskGrid = () => {
 
   const handleComplete = async (taskId: string) => {
     await updateTask.mutateAsync({ taskId, input: { status: "completed" } });
+  };
+
+  const openAttachment = async (attachmentPath: string) => {
+    const url = await getTaskAttachmentUrl(attachmentPath);
+    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   const getInitials = (name: string) => {
@@ -270,6 +278,7 @@ const TaskGrid = () => {
                   <ArrowUpDown className="ml-1 h-3 w-3" />
                 </Button>
               </TableHead>
+              <TableHead>Attachment</TableHead>
               <TableHead>Tags</TableHead>
               <TableHead className="w-[60px]">Actions</TableHead>
             </TableRow>
@@ -278,7 +287,7 @@ const TaskGrid = () => {
             {isLoading ? (
               [...Array(5)].map((_, i) => (
                 <TableRow key={i}>
-                  {[...Array(9)].map((_, j) => (
+                  {[...Array(10)].map((_, j) => (
                     <TableCell key={j}>
                       <Skeleton className="h-5 w-full" />
                     </TableCell>
@@ -287,7 +296,7 @@ const TaskGrid = () => {
               ))
             ) : data?.tasks.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center py-12">
+                <TableCell colSpan={10} className="text-center py-12">
                   <p className="text-muted-foreground">No tasks yet—create your first task</p>
                 </TableCell>
               </TableRow>
@@ -369,6 +378,28 @@ const TaskGrid = () => {
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {format(new Date(task.created_at), "MMM d, yyyy")}
+                  </TableCell>
+                  <TableCell>
+                    {task.attachment_path && task.attachment_name ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 px-2 text-left"
+                        onClick={() => openAttachment(task.attachment_path!)}
+                        title={task.attachment_name}
+                      >
+                        <TaskAttachmentIcon
+                          name={task.attachment_name}
+                          path={task.attachment_path}
+                          size="sm"
+                          className="mr-1.5 flex-shrink-0"
+                        />
+                        <span className="truncate max-w-[140px]">{task.attachment_name}</span>
+                      </Button>
+                    ) : (
+                      <span className="text-muted-foreground text-sm">—</span>
+                    )}
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">

@@ -2,7 +2,7 @@ import { ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Shield, FileText, Users, BarChart, Settings, LogOut, FileCheck, Hexagon, ListTodo, FileEdit, ClipboardList, FolderOpen } from "lucide-react";
+import { Shield, FileText, Users, BarChart, Settings, LogOut, FileCheck, Hexagon, ListTodo, FileEdit, ClipboardList, FolderOpen, BookMarked } from "lucide-react";
 import { toast } from "sonner";
 
 interface DashboardLayoutProps {
@@ -24,6 +24,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
     { icon: FileCheck, label: "Pending Attestations", href: "/dashboard/attestations" },
     { icon: ListTodo, label: "Tasks", href: "/dashboard/tasks" },
     { icon: FileEdit, label: "PPDU Brief", href: "/dashboard/ppdu-brief" },
+    { icon: BookMarked, label: "PPDU Library", href: "/dashboard/ppdu-brief-library" },
     { icon: ClipboardList, label: "Project Intake", href: "/dashboard/project-intake" },
     { icon: FolderOpen, label: "Project Library", href: "/dashboard/project-library" },
     { icon: Users, label: "Groups", href: "/dashboard/groups" },
@@ -39,7 +40,7 @@ const DashboardLayout = ({ children }: DashboardLayoutProps) => {
               <Hexagon className="h-7 w-7 text-primary-foreground fill-primary-foreground/20" strokeWidth={2} />
               <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-primary-foreground">A</span>
             </div>
-            <span className="text-xl font-bold tracking-tight">APEX</span>
+            <span className="text-xl font-bold tracking-tight">PPDU</span>
           </Link>
           
           <Button variant="outline" onClick={handleSignOut}>

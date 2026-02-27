@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Task, TaskFilters, TaskSort, CreateTaskInput, UpdateTaskInput } from "@/types/tasks";
 import { toast } from "sonner";
+import { normalizeExternalUrl, uploadTaskAttachment } from "@/utils/taskAttachments";
 
 const TASKS_QUERY_KEY = "tasks";
 
@@ -165,6 +166,7 @@ export function useCreateTask() {
           description: input.description || null,
           status: input.status || "not_started",
           priority: input.priority || "medium",
+          board_column: input.board_column || "General",
           start_date: input.start_date || null,
           due_date: input.due_date || null,
           tags: input.tags || [],
@@ -189,6 +191,59 @@ export function useCreateTask() {
 
         if (assigneeError) throw assigneeError;
       }
+
+      if (input.attachment_file) {
+        const { filePath, fileName } = await uploadTaskAttachment({
+          file: input.attachment_file,
+          taskId: task.id,
+          userId: user.id,
+        });
+
+        const { data: updatedTask, error: attachmentUpdateError } = await supabase
+          .from("tasks")
+          .update({
+            attachment_name: fileName,
+            attachment_path: filePath,
+          })
+          .eq("id", task.id)
+          .select()
+          .single();
+
+        if (attachmentUpdateError) throw attachmentUpdateError;
+        return updatedTask;
+      }
+
+
+      if (input.attachment_url) {
+        const url = normalizeExternalUrl(input.attachment_url);
+        if (url) {
+          let derivedName = (input.attachment_display_name || "").trim();
+
+          if (!derivedName) {
+            try {
+              const withoutQuery = url.split("?")[0].split("#")[0];
+              const last = withoutQuery.split("/").pop() || "Attachment";
+              derivedName = decodeURIComponent(last) || "Attachment";
+            } catch {
+              derivedName = "Attachment";
+            }
+          }
+
+          const { data: updatedTask, error: attachmentUpdateError } = await supabase
+            .from("tasks")
+            .update({
+              attachment_name: derivedName,
+              attachment_path: url,
+            })
+            .eq("id", task.id)
+            .select()
+            .single();
+
+          if (attachmentUpdateError) throw attachmentUpdateError;
+          return updatedTask;
+        }
+      }
+
 
       return task;
     },

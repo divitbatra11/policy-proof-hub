@@ -7,9 +7,8 @@ import { supabase } from "@/integrations/supabase/client";
 // If your app already configures the worker globally elsewhere (e.g. PolicyViewer),
 // you can remove the workerSrc lines below.
 import * as pdfjsLib from "pdfjs-dist";
-import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
-(pdfjsLib as any).GlobalWorkerOptions.workerSrc = workerSrc;
+(pdfjsLib as any).GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${(pdfjsLib as any).version}/build/pdf.worker.min.mjs`;
 
 type PolicyVersion = {
   id: string;

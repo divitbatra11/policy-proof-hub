@@ -26,19 +26,32 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { format } from "date-fns";
-import { CalendarIcon, X } from "lucide-react";
+import { CalendarIcon, X, Link2 } from "lucide-react";
 import { useCreateTask, useUsers } from "@/hooks/useTasks";
-import { TaskStatus, TaskPriority, STATUS_LABELS, PRIORITY_LABELS } from "@/types/tasks";
+import {
+  TaskStatus,
+  TaskPriority,
+  STATUS_LABELS,
+  PRIORITY_LABELS,
+  BOARD_COLUMNS,
+} from "@/types/tasks";
 import { cn } from "@/lib/utils";
+import { normalizeExternalUrl } from "@/utils/taskAttachments";
+import { TaskAttachmentIcon } from "./TaskAttachmentIcon";
 
 const createTaskSchema = z.object({
-  title: z.string().min(3, "Title must be at least 3 characters").max(120, "Title must be less than 120 characters"),
+  title: z
+    .string()
+    .min(3, "Title must be at least 3 characters")
+    .max(120, "Title must be less than 120 characters"),
   description: z.string().optional(),
   status: z.enum(["not_started", "in_progress", "completed"]).default("not_started"),
   priority: z.enum(["low", "medium", "high"]).default("medium"),
 });
 
 type FormData = z.infer<typeof createTaskSchema>;
+
+type AttachmentMode = "file" | "link";
 
 interface CreateTaskDialogProps {
   open: boolean;
@@ -51,7 +64,13 @@ const CreateTaskDialog = ({ open, onOpenChange }: CreateTaskDialogProps) => {
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
   const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
-  
+  const [boardColumn, setBoardColumn] = useState<string>("General");
+
+  const [attachmentMode, setAttachmentMode] = useState<AttachmentMode>("file");
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const [attachmentUrl, setAttachmentUrl] = useState<string>("");
+  const [attachmentDisplayName, setAttachmentDisplayName] = useState<string>("");
+
   const { data: users = [] } = useUsers();
   const createTask = useCreateTask();
 
@@ -76,10 +95,16 @@ const CreateTaskDialog = ({ open, onOpenChange }: CreateTaskDialogProps) => {
       description: data.description,
       status: data.status,
       priority: data.priority,
+      board_column: boardColumn,
       start_date: startDate?.toISOString() || null,
       due_date: dueDate?.toISOString() || null,
       tags,
       assignee_ids: selectedAssignees,
+      attachment_file: attachmentMode === "file" ? attachmentFile : null,
+      attachment_url:
+        attachmentMode === "link" ? normalizeExternalUrl(attachmentUrl) || null : null,
+      attachment_display_name:
+        attachmentMode === "link" ? attachmentDisplayName.trim() || null : null,
     });
     handleClose();
   };
@@ -91,6 +116,13 @@ const CreateTaskDialog = ({ open, onOpenChange }: CreateTaskDialogProps) => {
     setTags([]);
     setTagInput("");
     setSelectedAssignees([]);
+    setBoardColumn("General");
+
+    setAttachmentMode("file");
+    setAttachmentFile(null);
+    setAttachmentUrl("");
+    setAttachmentDisplayName("");
+
     onOpenChange(false);
   };
 
@@ -102,16 +134,25 @@ const CreateTaskDialog = ({ open, onOpenChange }: CreateTaskDialogProps) => {
   };
 
   const removeTag = (tag: string) => {
-    setTags(tags.filter(t => t !== tag));
+    setTags(tags.filter((t) => t !== tag));
   };
 
   const toggleAssignee = (userId: string) => {
-    setSelectedAssignees(prev =>
-      prev.includes(userId)
-        ? prev.filter(id => id !== userId)
-        : [...prev, userId]
+    setSelectedAssignees((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
     );
   };
+
+  const clearAttachment = () => {
+    setAttachmentFile(null);
+    setAttachmentUrl("");
+    setAttachmentDisplayName("");
+  };
+
+  const effectiveName =
+    attachmentMode === "file"
+      ? attachmentFile?.name
+      : attachmentDisplayName.trim() || "Attachment";
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -142,6 +183,99 @@ const CreateTaskDialog = ({ open, onOpenChange }: CreateTaskDialogProps) => {
               {...register("description")}
               rows={3}
             />
+          </div>
+
+          {/* Attachment */}
+          <div className="space-y-2">
+            <Label>Attachment</Label>
+
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={attachmentMode === "file" ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setAttachmentMode("file");
+                  setAttachmentUrl("");
+                  setAttachmentDisplayName("");
+                }}
+              >
+                Upload file
+              </Button>
+              <Button
+                type="button"
+                variant={attachmentMode === "link" ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setAttachmentMode("link");
+                  setAttachmentFile(null);
+                }}
+              >
+                Add link
+              </Button>
+            </div>
+
+            {attachmentMode === "file" ? (
+              <Input
+                id="attachment"
+                type="file"
+                onChange={(e) => {
+                  const file = e.target.files?.[0] ?? null;
+                  setAttachmentFile(file);
+                  if (file) {
+                    setAttachmentUrl("");
+                    setAttachmentDisplayName("");
+                  }
+                }}
+                accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.png,.jpg,.jpeg"
+              />
+            ) : (
+              <div className="space-y-2">
+                <Input
+                  value={attachmentDisplayName}
+                  onChange={(e) => setAttachmentDisplayName(e.target.value)}
+                  placeholder="Display name (e.g., DRAFT_Duress Alarm Policy)"
+                />
+                <div className="relative">
+                  <Link2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    value={attachmentUrl}
+                    onChange={(e) => setAttachmentUrl(e.target.value)}
+                    placeholder="https://..."
+                    className="pl-9"
+                  />
+                </div>
+              </div>
+            )}
+
+            {(attachmentFile || attachmentUrl.trim()) && (
+              <div className="flex items-center justify-between rounded-md border px-3 py-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <TaskAttachmentIcon
+                    name={effectiveName}
+                    path={attachmentMode === "link" ? normalizeExternalUrl(attachmentUrl) : null}
+                    size="sm"
+                  />
+                  <div className="min-w-0">
+                    <div className="text-sm truncate flex items-center gap-2">
+                      <span className="truncate">{effectiveName}</span>
+                      {attachmentMode === "link" && (
+                        <span className="text-xs text-muted-foreground">(link)</span>
+                      )}
+                    </div>
+                    {attachmentMode === "link" && attachmentUrl.trim() && (
+                      <div className="text-xs text-muted-foreground truncate">
+                        {normalizeExternalUrl(attachmentUrl)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <Button type="button" variant="ghost" size="sm" onClick={clearAttachment}>
+                  Remove
+                </Button>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -182,6 +316,22 @@ const CreateTaskDialog = ({ open, onOpenChange }: CreateTaskDialogProps) => {
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Board Column</Label>
+            <Select value={boardColumn} onValueChange={setBoardColumn}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {BOARD_COLUMNS.map((col) => (
+                  <SelectItem key={col} value={col}>
+                    {col}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -242,19 +392,13 @@ const CreateTaskDialog = ({ open, onOpenChange }: CreateTaskDialogProps) => {
             <Label>Assignees</Label>
             <ScrollArea className="h-32 border rounded-md p-2">
               {users.map((user) => (
-                <div
-                  key={user.id}
-                  className="flex items-center space-x-2 py-1"
-                >
+                <div key={user.id} className="flex items-center space-x-2 py-1">
                   <Checkbox
                     id={user.id}
                     checked={selectedAssignees.includes(user.id)}
                     onCheckedChange={() => toggleAssignee(user.id)}
                   />
-                  <label
-                    htmlFor={user.id}
-                    className="text-sm cursor-pointer flex-1"
-                  >
+                  <label htmlFor={user.id} className="text-sm cursor-pointer flex-1">
                     {user.full_name} ({user.email})
                   </label>
                 </div>
@@ -263,7 +407,7 @@ const CreateTaskDialog = ({ open, onOpenChange }: CreateTaskDialogProps) => {
             {selectedAssignees.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-2">
                 {selectedAssignees.map((id) => {
-                  const user = users.find(u => u.id === id);
+                  const user = users.find((u) => u.id === id);
                   return user ? (
                     <Badge key={id} variant="secondary" className="text-xs">
                       {user.full_name}

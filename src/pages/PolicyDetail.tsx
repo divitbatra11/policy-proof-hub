@@ -100,7 +100,7 @@ const PolicyDetail = () => {
           .select("id")
           .eq("user_id", user.id)
           .eq("policy_version_id", policyData.current_version_id)
-          .single();
+          .maybeSingle();
 
         setHasAttested(!!attestation);
       }

@@ -23,6 +23,7 @@ const PPDUBrief = () => {
     "idle" | "saving" | "saved" | "error"
   >("idle");
   const [briefId, setBriefId] = useState<string | null>(null);
+  const [isSavingToLibrary, setIsSavingToLibrary] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const hasLoadedRef = useRef(false);
 
@@ -197,6 +198,30 @@ const PPDUBrief = () => {
     toast.success("New PPDU Brief template created");
   };
 
+  const handleSaveToLibrary = async () => {
+    setIsSavingToLibrary(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const userId = sessionData?.session?.user?.id ?? null;
+
+      const { error } = await supabase
+        .from("ppdu_brief_library")
+        .insert({
+          title: documentTitle,
+          content: content,
+          saved_by: userId,
+        });
+
+      if (error) throw error;
+      toast.success("Brief saved to PPDU Library!");
+    } catch (err) {
+      console.error("Error saving to library:", err);
+      toast.error("Failed to save to library");
+    } finally {
+      setIsSavingToLibrary(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <DashboardLayout>
@@ -206,6 +231,7 @@ const PPDUBrief = () => {
             <div className="flex gap-2">
               <Skeleton className="h-10 w-32" />
               <Skeleton className="h-10 w-28" />
+              <Skeleton className="h-10 w-36" />
               <Skeleton className="h-10 w-28" />
             </div>
           </div>
@@ -232,7 +258,9 @@ const PPDUBrief = () => {
           onDownload={handleDownload}
           onImport={handleImportClick}
           onNewDocument={handleNewDocument}
+          onSaveToLibrary={handleSaveToLibrary}
           isImporting={isImporting}
+          isSavingToLibrary={isSavingToLibrary}
           saveStatus={saveStatus}
         />
 

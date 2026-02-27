@@ -86,12 +86,52 @@ const PPDUEditor = ({ content, onContentChange }: PPDUEditorProps) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const isInternalChange = useRef(false);
-  const [tableSections, setTableSections] = useState<{ top: number; tableIndex: number; label: string }[]>([]);
+  const [tableSections, setTableSections] = useState<
+    { top: number; tableIndex: number; label: string }[]
+  >([]);
+  const savedSelectionRef = useRef<Range | null>(null);
+
+  const normalizeUrl = useCallback((rawUrl: string) => {
+    const trimmed = rawUrl.trim();
+    if (!trimmed) return "";
+
+    // Allow common schemes and relative anchors.
+    if (
+      trimmed.startsWith("http://") ||
+      trimmed.startsWith("https://") ||
+      trimmed.startsWith("mailto:") ||
+      trimmed.startsWith("tel:") ||
+      trimmed.startsWith("#")
+    ) {
+      return trimmed;
+    }
+
+    // If user types something like "example.com", treat it as https.
+    return `https://${trimmed}`;
+  }, []);
+
+  const ensureLinkAttributes = useCallback(() => {
+    if (!editorRef.current) return;
+    const links =
+      editorRef.current.querySelectorAll<HTMLAnchorElement>("a[href]");
+    links.forEach((a) => {
+      // Keep mailto/tel/# links as-is; for everything else, open in a new tab.
+      const href = a.getAttribute("href") ?? "";
+      if (
+        href.startsWith("mailto:") ||
+        href.startsWith("tel:") ||
+        href.startsWith("#")
+      )
+        return;
+      a.setAttribute("target", "_blank");
+      a.setAttribute("rel", "noopener noreferrer");
+    });
+  }, []);
 
   // Scan for h1/h2 headings followed by tables to position add-row buttons
   const updateTableButtons = useCallback(() => {
     if (!editorRef.current || !wrapperRef.current) return;
-    const headings = editorRef.current.querySelectorAll('h1, h2');
+    const headings = editorRef.current.querySelectorAll("h1, h2");
     const editorRect = editorRef.current.getBoundingClientRect();
     const wrapperRect = wrapperRef.current.getBoundingClientRect();
     const sections: { top: number; tableIndex: number; label: string }[] = [];
@@ -100,15 +140,22 @@ const PPDUEditor = ({ content, onContentChange }: PPDUEditorProps) => {
     headings.forEach((heading) => {
       // Find the next sibling that is a table
       let sibling = heading.nextElementSibling;
-      while (sibling && sibling.tagName !== 'TABLE' && sibling.tagName !== 'H1' && sibling.tagName !== 'H2') {
+      while (
+        sibling &&
+        sibling.tagName !== "TABLE" &&
+        sibling.tagName !== "H1" &&
+        sibling.tagName !== "H2"
+      ) {
         sibling = sibling.nextElementSibling;
       }
-      if (sibling?.tagName === 'TABLE') {
+      if (sibling?.tagName === "TABLE") {
         const headingRect = heading.getBoundingClientRect();
         sections.push({
-          top: headingRect.top - wrapperRect.top + (headingRect.height / 2) - 12,
-          tableIndex: Array.from(editorRef.current!.querySelectorAll('table')).indexOf(sibling as HTMLTableElement),
-          label: heading.textContent || 'Table',
+          top: headingRect.top - wrapperRect.top + headingRect.height / 2 - 12,
+          tableIndex: Array.from(
+            editorRef.current!.querySelectorAll("table")
+          ).indexOf(sibling as HTMLTableElement),
+          label: heading.textContent || "Table",
         });
       }
     });
@@ -122,32 +169,61 @@ const PPDUEditor = ({ content, onContentChange }: PPDUEditorProps) => {
     return () => clearTimeout(timer);
   }, [content, updateTableButtons]);
 
-  const addRowToTable = useCallback((tableIndex: number) => {
-    if (!editorRef.current) return;
-    const tables = editorRef.current.querySelectorAll('table');
-    const table = tables[tableIndex];
-    if (!table) return;
+  const addRowToTable = useCallback(
+    (tableIndex: number) => {
+      if (!editorRef.current) return;
+      const tables = editorRef.current.querySelectorAll("table");
+      const table = tables[tableIndex];
+      if (!table) return;
 
-    const lastRow = table.querySelector('tr:last-child');
-    if (!lastRow) return;
+      const lastRow = table.querySelector("tr:last-child");
+      if (!lastRow) return;
 
-    const newRow = document.createElement('tr');
-    const cells = lastRow.querySelectorAll('td, th');
-    cells.forEach((cell) => {
-      const newCell = document.createElement('td');
-      newCell.setAttribute('style', (cell as HTMLElement).style.cssText.replace(/font-weight:\s*bold;?/gi, ''));
-      newCell.innerHTML = '&nbsp;';
-      newRow.appendChild(newCell);
-    });
+      const newRow = document.createElement("tr");
+      const cells = lastRow.querySelectorAll("td, th");
+      cells.forEach((cell) => {
+        const newCell = document.createElement("td");
+        newCell.setAttribute(
+          "style",
+          (cell as HTMLElement).style.cssText.replace(
+            /font-weight:\s*bold;?/gi,
+            ""
+          )
+        );
+        newCell.innerHTML = "&nbsp;";
+        newRow.appendChild(newCell);
+      });
 
-    // Append to tbody or table directly
-    const tbody = table.querySelector('tbody') || table;
-    tbody.appendChild(newRow);
+      // Append to tbody or table directly
+      const tbody = table.querySelector("tbody") || table;
+      tbody.appendChild(newRow);
 
-    isInternalChange.current = true;
-    onContentChange(editorRef.current.innerHTML);
-    setTimeout(updateTableButtons, 50);
-  }, [onContentChange, updateTableButtons]);
+      isInternalChange.current = true;
+      onContentChange(editorRef.current.innerHTML);
+      setTimeout(updateTableButtons, 50);
+    },
+    [onContentChange, updateTableButtons]
+  );
+
+  const deleteLastRowFromTable = useCallback(
+    (tableIndex: number) => {
+      if (!editorRef.current) return;
+      const tables = editorRef.current.querySelectorAll("table");
+      const table = tables[tableIndex];
+      if (!table) return;
+
+      const rows = table.querySelectorAll("tr");
+      if (rows.length <= 1) return;
+
+      const lastRow = rows[rows.length - 1];
+      lastRow.remove();
+
+      isInternalChange.current = true;
+      onContentChange(editorRef.current.innerHTML);
+      setTimeout(updateTableButtons, 50);
+    },
+    [onContentChange, updateTableButtons]
+  );
 
   // Only sync content from parent when it changes externally (template load, import, etc.)
   useEffect(() => {
@@ -158,33 +234,44 @@ const PPDUEditor = ({ content, onContentChange }: PPDUEditorProps) => {
     if (editorRef.current && editorRef.current.innerHTML !== content) {
       // Strip out HTML document wrapper if present (from intake forms)
       let cleanContent = content;
-      
+
       // If content contains full HTML document structure, extract only the body content
-      if (content.includes('<!DOCTYPE html>') || content.includes('<html>')) {
-        const bodyMatch = content.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+      if (content.includes("<!DOCTYPE html>") || content.includes("<html>")) {
+        const bodyMatch = content.match(
+          /<body[^>]*>([\s\S]*)<\/body>/i
+        );
         if (bodyMatch && bodyMatch[1]) {
           cleanContent = bodyMatch[1];
         }
       }
-      
+
       // Also strip out any <style> tags that might affect the parent layout
-      cleanContent = cleanContent.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
-      
+      cleanContent = cleanContent.replace(
+        /<style[^>]*>[\s\S]*?<\/style>/gi,
+        ""
+      );
+
       // Strip out any embedded <button> elements (e.g. old "Add Row" buttons saved in content)
-      cleanContent = cleanContent.replace(/<button[^>]*>[\s\S]*?<\/button>/gi, '');
-      
+      cleanContent = cleanContent.replace(
+        /<button[^>]*>[\s\S]*?<\/button>/gi,
+        ""
+      );
+
       editorRef.current.innerHTML = cleanContent;
     }
   }, [content]);
 
-  const execCommand = useCallback((command: string, value?: string) => {
-    document.execCommand(command, false, value);
-    editorRef.current?.focus();
-    if (editorRef.current) {
-      isInternalChange.current = true;
-      onContentChange(editorRef.current.innerHTML);
-    }
-  }, [onContentChange]);
+  const execCommand = useCallback(
+    (command: string, value?: string) => {
+      document.execCommand(command, false, value);
+      editorRef.current?.focus();
+      if (editorRef.current) {
+        isInternalChange.current = true;
+        onContentChange(editorRef.current.innerHTML);
+      }
+    },
+    [onContentChange]
+  );
 
   const handleInput = () => {
     if (editorRef.current) {
@@ -193,68 +280,239 @@ const PPDUEditor = ({ content, onContentChange }: PPDUEditorProps) => {
     }
   };
 
-  const insertTable = (rows: number, cols: number, hasHeader: boolean = true, headerColor: string = HEADER_BG_COLOR) => {
-    let tableHtml = `<table style="width: 100%; border-collapse: collapse; margin: 16px 0;">`;
-    
-    for (let i = 0; i < rows; i++) {
+  const handleTableTabNavigation = useCallback(
+    (backward: boolean) => {
+      if (!editorRef.current) return false;
+
+      const selection = window.getSelection();
+      if (!selection || selection.rangeCount === 0) return false;
+
+      let currentNode: Node | null = selection.anchorNode;
+      if (!currentNode) return false;
+
+      const currentElement =
+        currentNode.nodeType === Node.ELEMENT_NODE
+          ? (currentNode as Element)
+          : currentNode.parentElement;
+
+      const currentCell = currentElement?.closest(
+        "td, th"
+      ) as HTMLTableCellElement | null;
+      if (!currentCell || !editorRef.current.contains(currentCell)) return false;
+
+      const currentRow = currentCell.closest(
+        "tr"
+      ) as HTMLTableRowElement | null;
+      const table = currentCell.closest("table") as HTMLTableElement | null;
+      if (!currentRow || !table) return true;
+
+      const rows = Array.from(table.querySelectorAll("tr"));
+      const rowIndex = rows.indexOf(currentRow);
+      const cellIndex = Array.from(currentRow.cells).indexOf(currentCell);
+      if (rowIndex === -1 || cellIndex === -1) return true;
+
+      let targetCell: HTMLTableCellElement | null = null;
+
+      if (backward) {
+        for (let r = rowIndex; r >= 0; r--) {
+          const row = rows[r] as HTMLTableRowElement;
+          if (row.cells.length === 0) continue;
+
+          if (r === rowIndex) {
+            const prevIndex = cellIndex - 1;
+            if (prevIndex >= 0 && prevIndex < row.cells.length) {
+              targetCell = row.cells[prevIndex] as HTMLTableCellElement;
+              break;
+            }
+          } else {
+            targetCell = row.cells[
+              row.cells.length - 1
+            ] as HTMLTableCellElement;
+            break;
+          }
+        }
+      } else {
+        for (let r = rowIndex; r < rows.length; r++) {
+          const row = rows[r] as HTMLTableRowElement;
+          if (row.cells.length === 0) continue;
+
+          if (r === rowIndex) {
+            const nextIndex = cellIndex + 1;
+            if (nextIndex < row.cells.length) {
+              targetCell = row.cells[nextIndex] as HTMLTableCellElement;
+              break;
+            }
+          } else {
+            targetCell = row.cells[0] as HTMLTableCellElement;
+            break;
+          }
+        }
+      }
+
+      if (!targetCell) return true;
+
+      // Move caret to the start of the target cell
+      const range = document.createRange();
+      range.selectNodeContents(targetCell);
+      range.collapse(true);
+
+      selection.removeAllRanges();
+      selection.addRange(range);
+
+      return true;
+    },
+    []
+  );
+
+  // Ensure tables have proper styling and are editable
+  const initializeEditor = useCallback(() => {
+    if (!editorRef.current) return;
+
+    // Make sure tables are properly styled
+    const tables = editorRef.current.querySelectorAll("table");
+    tables.forEach((table) => {
+      table.style.borderCollapse = "collapse";
+      table.style.width = "100%";
+      table.style.margin = "16px 0";
+
+      // Ensure cells have borders and padding
+      const cells = table.querySelectorAll("td, th");
+      cells.forEach((cell) => {
+        (cell as HTMLElement).style.border = "1px solid #000";
+        (cell as HTMLElement).style.padding = "8px";
+        (cell as HTMLElement).style.verticalAlign = "top";
+      });
+    });
+
+    // Ensure headings have proper styling
+    const h1s = editorRef.current.querySelectorAll("h1");
+    h1s.forEach((h1) => {
+      (h1 as HTMLElement).style.fontSize = "24px";
+      (h1 as HTMLElement).style.fontWeight = "bold";
+      (h1 as HTMLElement).style.margin = "24px 0 16px 0";
+    });
+
+    const h2s = editorRef.current.querySelectorAll("h2");
+    h2s.forEach((h2) => {
+      (h2 as HTMLElement).style.fontSize = "18px";
+      (h2 as HTMLElement).style.fontWeight = "bold";
+      (h2 as HTMLElement).style.margin = "20px 0 12px 0";
+    });
+
+    const h3s = editorRef.current.querySelectorAll("h3");
+    h3s.forEach((h3) => {
+      (h3 as HTMLElement).style.fontSize = "14px";
+      (h3 as HTMLElement).style.fontWeight = "bold";
+      (h3 as HTMLElement).style.margin = "16px 0 8px 0";
+    });
+
+    // Ensure lists have proper styling
+    const uls = editorRef.current.querySelectorAll("ul");
+    uls.forEach((ul) => {
+      (ul as HTMLElement).style.paddingLeft = "24px";
+      (ul as HTMLElement).style.margin = "8px 0";
+      (ul as HTMLElement).style.listStyleType = "disc";
+    });
+
+    const ols = editorRef.current.querySelectorAll("ol");
+    ols.forEach((ol) => {
+      (ol as HTMLElement).style.paddingLeft = "24px";
+      (ol as HTMLElement).style.margin = "8px 0";
+      (ol as HTMLElement).style.listStyleType = "decimal";
+    });
+
+    // Ensure blockquotes have proper styling
+    const blockquotes = editorRef.current.querySelectorAll("blockquote");
+    blockquotes.forEach((bq) => {
+      (bq as HTMLElement).style.borderLeft = "4px solid #ccc";
+      (bq as HTMLElement).style.paddingLeft = "16px";
+      (bq as HTMLElement).style.margin = "16px 0";
+      (bq as HTMLElement).style.fontStyle = "italic";
+      (bq as HTMLElement).style.color = "#666";
+    });
+  }, []);
+
+  useEffect(() => {
+    initializeEditor();
+    updateTableButtons();
+  }, [initializeEditor, updateTableButtons]);
+
+  const insertTable = (rows: number, cols: number) => {
+    let tableHtml = '<table style="width: 100%; border-collapse: collapse; margin: 16px 0;">';
+
+    // Header row
+    tableHtml += "<tr>";
+    for (let c = 0; c < cols; c++) {
+      tableHtml += `<th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center;">Header ${c + 1}</th>`;
+    }
+    tableHtml += "</tr>";
+
+    // Data rows
+    for (let r = 0; r < rows - 1; r++) {
       tableHtml += "<tr>";
-      for (let j = 0; j < cols; j++) {
-        const isHeader = hasHeader && i === 0;
-        const cellStyle = isHeader
-          ? `background-color: ${headerColor}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center;`
-          : "border: 1px solid #000; padding: 8px; vertical-align: top;";
-        const tag = isHeader ? "th" : "td";
-        tableHtml += `<${tag} style="${cellStyle}">${isHeader ? "Header" : "&nbsp;"}</${tag}>`;
+      for (let c = 0; c < cols; c++) {
+        tableHtml += '<td style="border: 1px solid #000; padding: 8px; vertical-align: top;">&nbsp;</td>';
       }
       tableHtml += "</tr>";
     }
-    
+
     tableHtml += "</table><p><br></p>";
     execCommand("insertHTML", tableHtml);
+    setTimeout(updateTableButtons, 50);
   };
 
   const insertPPDUTable = () => {
     const tableHtml = `
-      <h1 style="font-weight: bold; font-size: 24px; margin-bottom: 16px;">Executive Summary</h1>
+      <h1 style="font-weight: bold; font-size: 24px; margin: 24px 0 16px 0;">Executive Summary</h1>
       <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
         <tr>
-          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 20%;">Project/Initiative</th>
-          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 10%;">Lead</th>
-          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 40%;">Summary</th>
-          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 30%;">Status/Next Steps</th>
+          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 25%;">Project</th>
+          <td style="border: 1px solid #000; padding: 8px;">&nbsp;</td>
         </tr>
         <tr>
-          <td style="border: 1px solid #000; padding: 8px; vertical-align: top; font-weight: bold;">Project Name</td>
-          <td style="border: 1px solid #000; padding: 8px; vertical-align: top; text-align: center;">Name</td>
-          <td style="border: 1px solid #000; padding: 8px; vertical-align: top;">Enter project summary here...</td>
-          <td style="border: 1px solid #000; padding: 8px; vertical-align: top;">Enter status and next steps...</td>
+          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center;">Sponsor</th>
+          <td style="border: 1px solid #000; padding: 8px;">&nbsp;</td>
+        </tr>
+        <tr>
+          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center;">Project Lead</th>
+          <td style="border: 1px solid #000; padding: 8px;">&nbsp;</td>
+        </tr>
+        <tr>
+          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center;">Purpose</th>
+          <td style="border: 1px solid #000; padding: 8px;">&nbsp;</td>
+        </tr>
+        <tr>
+          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center;">Description</th>
+          <td style="border: 1px solid #000; padding: 8px;">&nbsp;</td>
+        </tr>
+        <tr>
+          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center;">Status</th>
+          <td style="border: 1px solid #000; padding: 8px;">&nbsp;</td>
         </tr>
       </table>
       <p><br></p>
     `;
     execCommand("insertHTML", tableHtml);
+    setTimeout(updateTableButtons, 50);
   };
 
   const insertExecutiveQueueTable = () => {
     const tableHtml = `
-      <h2 style="font-weight: bold; font-size: 18px; margin: 24px 0 16px 0;">Executive Queue</h2>
+      <h1 style="font-weight: bold; font-size: 24px; margin: 24px 0 16px 0;">Executive Queue</h1>
       <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
         <tr>
-          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 20%;">Project/Initiative</th>
-          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 10%;">Lead</th>
-          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 40%;">Summary</th>
-          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 30%;">Status/Next Steps</th>
+          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 50%;">Date</th>
+          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 50%;">Committee / Meeting</th>
         </tr>
         <tr>
-          <td style="border: 1px solid #000; padding: 8px; vertical-align: top; font-weight: bold;">Project Name</td>
-          <td style="border: 1px solid #000; padding: 8px; vertical-align: top; text-align: center;">Name</td>
-          <td style="border: 1px solid #000; padding: 8px; vertical-align: top;">Enter project summary here...</td>
-          <td style="border: 1px solid #000; padding: 8px; vertical-align: top;">Enter status and next steps...</td>
+          <td style="border: 1px solid #000; padding: 8px; text-align: center;">&nbsp;</td>
+          <td style="border: 1px solid #000; padding: 8px; text-align: center;">&nbsp;</td>
         </tr>
       </table>
       <p><br></p>
     `;
     execCommand("insertHTML", tableHtml);
+    setTimeout(updateTableButtons, 50);
   };
 
   const insertKeyDatesTable = () => {
@@ -262,21 +520,20 @@ const PPDUEditor = ({ content, onContentChange }: PPDUEditorProps) => {
       <h2 style="font-weight: bold; font-size: 18px; margin: 24px 0 16px 0;">Key Dates</h2>
       <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
         <tr>
-          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 25%;">Milestone</th>
-          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 25%;">Target Date</th>
-          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 25%;">Status</th>
-          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 25%;">Notes</th>
+          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 33%;">Milestone</th>
+          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 33%;">Target Date</th>
+          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 34%;">Notes</th>
         </tr>
         <tr>
-          <td style="border: 1px solid #000; padding: 8px; vertical-align: top;">&nbsp;</td>
-          <td style="border: 1px solid #000; padding: 8px; vertical-align: top; text-align: center;">&nbsp;</td>
-          <td style="border: 1px solid #000; padding: 8px; vertical-align: top;">&nbsp;</td>
-          <td style="border: 1px solid #000; padding: 8px; vertical-align: top;">&nbsp;</td>
+          <td style="border: 1px solid #000; padding: 8px;">&nbsp;</td>
+          <td style="border: 1px solid #000; padding: 8px; text-align: center;">&nbsp;</td>
+          <td style="border: 1px solid #000; padding: 8px;">&nbsp;</td>
         </tr>
       </table>
       <p><br></p>
     `;
     execCommand("insertHTML", tableHtml);
+    setTimeout(updateTableButtons, 50);
   };
 
   const insertRisksTable = () => {
@@ -284,14 +541,14 @@ const PPDUEditor = ({ content, onContentChange }: PPDUEditorProps) => {
       <h2 style="font-weight: bold; font-size: 18px; margin: 24px 0 16px 0;">Risks and Issues</h2>
       <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
         <tr>
-          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 30%;">Risk/Issue</th>
-          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 15%;">Impact</th>
-          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 15%;">Likelihood</th>
-          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 40%;">Mitigation</th>
+          <th style="background-color: ${RED_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 10%;">#</th>
+          <th style="background-color: ${RED_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 50%;">Risk/Issue</th>
+          <th style="background-color: ${RED_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 20%;">Owner</th>
+          <th style="background-color: ${RED_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 20%;">Mitigation</th>
         </tr>
         <tr>
+          <td style="border: 1px solid #000; padding: 8px; vertical-align: top; text-align: center;">1</td>
           <td style="border: 1px solid #000; padding: 8px; vertical-align: top;">&nbsp;</td>
-          <td style="border: 1px solid #000; padding: 8px; vertical-align: top; text-align: center;">&nbsp;</td>
           <td style="border: 1px solid #000; padding: 8px; vertical-align: top; text-align: center;">&nbsp;</td>
           <td style="border: 1px solid #000; padding: 8px; vertical-align: top;">&nbsp;</td>
         </tr>
@@ -299,6 +556,7 @@ const PPDUEditor = ({ content, onContentChange }: PPDUEditorProps) => {
       <p><br></p>
     `;
     execCommand("insertHTML", tableHtml);
+    setTimeout(updateTableButtons, 50);
   };
 
   const insertDecisionsTable = () => {
@@ -306,21 +564,20 @@ const PPDUEditor = ({ content, onContentChange }: PPDUEditorProps) => {
       <h2 style="font-weight: bold; font-size: 18px; margin: 24px 0 16px 0;">Decisions Required</h2>
       <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
         <tr>
-          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 35%;">Decision</th>
-          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 20%;">Owner</th>
-          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 20%;">Due Date</th>
-          <th style="background-color: ${HEADER_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 25%;">Status</th>
+          <th style="background-color: ${YELLOW_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 10%;">#</th>
+          <th style="background-color: ${YELLOW_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 60%;">Decision</th>
+          <th style="background-color: ${YELLOW_BG_COLOR}; border: 1px solid #000; padding: 8px; font-weight: bold; text-align: center; width: 30%;">Required By</th>
         </tr>
         <tr>
+          <td style="border: 1px solid #000; padding: 8px; vertical-align: top; text-align: center;">1</td>
           <td style="border: 1px solid #000; padding: 8px; vertical-align: top;">&nbsp;</td>
           <td style="border: 1px solid #000; padding: 8px; vertical-align: top; text-align: center;">&nbsp;</td>
-          <td style="border: 1px solid #000; padding: 8px; vertical-align: top; text-align: center;">&nbsp;</td>
-          <td style="border: 1px solid #000; padding: 8px; vertical-align: top;">&nbsp;</td>
         </tr>
       </table>
       <p><br></p>
     `;
     execCommand("insertHTML", tableHtml);
+    setTimeout(updateTableButtons, 50);
   };
 
   const insertActionItemsTable = () => {
@@ -360,13 +617,50 @@ const PPDUEditor = ({ content, onContentChange }: PPDUEditorProps) => {
   };
 
   const insertHorizontalRule = () => {
-    execCommand("insertHTML", '<hr style="border: none; border-top: 2px solid #000; margin: 16px 0;"><p><br></p>');
+    execCommand(
+      "insertHTML",
+      '<hr style="border: none; border-top: 2px solid #000; margin: 16px 0;"><p><br></p>'
+    );
   };
 
   const insertLink = () => {
-    const url = prompt("Enter URL:", "https://");
-    if (url) {
+    // Save current selection (prompt will typically steal focus and clear it)
+    const selection = window.getSelection();
+    savedSelectionRef.current =
+      selection && selection.rangeCount > 0
+        ? selection.getRangeAt(0).cloneRange()
+        : null;
+
+    const rawUrl = prompt("Enter URL:", "https://");
+    const url = rawUrl ? normalizeUrl(rawUrl) : "";
+    if (!url) return;
+
+    // Restore selection
+    const sel = window.getSelection();
+    if (sel && savedSelectionRef.current) {
+      sel.removeAllRanges();
+      sel.addRange(savedSelectionRef.current);
+    }
+
+    // If nothing was selected, insert the URL as linked text (Word-like behavior)
+    const rangeIsCollapsed = savedSelectionRef.current?.collapsed ?? true;
+    if (rangeIsCollapsed) {
+      const safeText = url.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      execCommand(
+        "insertHTML",
+        `<a href="${url}" target="_blank" rel="noopener noreferrer">${safeText}</a>`
+      );
+    } else {
       execCommand("createLink", url);
+    }
+
+    // Ensure links look & behave like links after insertion
+    ensureLinkAttributes();
+
+    // Persist any attribute tweaks we made above.
+    if (editorRef.current) {
+      isInternalChange.current = true;
+      onContentChange(editorRef.current.innerHTML);
     }
   };
 
@@ -384,6 +678,11 @@ const PPDUEditor = ({ content, onContentChange }: PPDUEditorProps) => {
     <Button
       variant="ghost"
       size="sm"
+      onMouseDown={(e) => {
+        // Prevent toolbar buttons from stealing focus and clearing the editor selection.
+        // This is especially important for link creation.
+        e.preventDefault();
+      }}
       onClick={onClick}
       title={title}
       disabled={disabled}
@@ -396,68 +695,45 @@ const PPDUEditor = ({ content, onContentChange }: PPDUEditorProps) => {
   return (
     <div className="border rounded-lg overflow-hidden bg-white">
       {/* Toolbar Row 1 */}
-      <div className="flex flex-wrap items-center gap-1 bg-muted/50 p-2 border-b">
-        {/* Font Family */}
-        <Select onValueChange={(v) => execCommand("fontName", v)} defaultValue="Calibri">
-          <SelectTrigger className="w-28 h-8 text-xs">
-            <SelectValue placeholder="Font" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="Calibri">Calibri</SelectItem>
-            <SelectItem value="Arial">Arial</SelectItem>
-            <SelectItem value="Times New Roman">Times New Roman</SelectItem>
-            <SelectItem value="Georgia">Georgia</SelectItem>
-            <SelectItem value="Verdana">Verdana</SelectItem>
-            <SelectItem value="Courier New">Courier New</SelectItem>
-          </SelectContent>
-        </Select>
-
+      <div className="border-b p-2 flex flex-wrap gap-1 bg-gray-50">
         {/* Font Size */}
-        <Select onValueChange={(v) => execCommand("fontSize", v)} defaultValue="3">
-          <SelectTrigger className="w-16 h-8 text-xs">
+        <Select onValueChange={(value) => execCommand("fontSize", value)}>
+          <SelectTrigger className="w-20 h-8">
             <SelectValue placeholder="Size" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="1">8</SelectItem>
-            <SelectItem value="2">10</SelectItem>
-            <SelectItem value="3">12</SelectItem>
-            <SelectItem value="4">14</SelectItem>
-            <SelectItem value="5">18</SelectItem>
-            <SelectItem value="6">24</SelectItem>
-            <SelectItem value="7">36</SelectItem>
+            <SelectItem value="1">8pt</SelectItem>
+            <SelectItem value="2">10pt</SelectItem>
+            <SelectItem value="3">12pt</SelectItem>
+            <SelectItem value="4">14pt</SelectItem>
+            <SelectItem value="5">18pt</SelectItem>
+            <SelectItem value="6">24pt</SelectItem>
+            <SelectItem value="7">36pt</SelectItem>
           </SelectContent>
         </Select>
 
-        {/* Heading Dropdown */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-8 px-2" title="Headings">
-              <Heading1 className="h-4 w-4 mr-1" />
-              <span className="text-xs">Heading</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
-            <DropdownMenuItem onClick={() => formatHeading("p")}>
-              <span className="text-sm">Normal</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => formatHeading("h1")}>
-              <span className="text-2xl font-bold">Heading 1</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => formatHeading("h2")}>
-              <span className="text-xl font-bold">Heading 2</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => formatHeading("h3")}>
-              <span className="text-lg font-bold">Heading 3</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => formatHeading("h4")}>
-              <span className="text-base font-bold">Heading 4</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Separator orientation="vertical" className="h-6 mx-1" />
+
+        {/* Headings */}
+        <ToolbarButton
+          onClick={() => formatHeading("h1")}
+          icon={Heading1}
+          title="Heading 1"
+        />
+        <ToolbarButton
+          onClick={() => formatHeading("h2")}
+          icon={Heading2}
+          title="Heading 2"
+        />
+        <ToolbarButton
+          onClick={() => formatHeading("h3")}
+          icon={Heading3}
+          title="Heading 3"
+        />
 
         <Separator orientation="vertical" className="h-6 mx-1" />
 
-        {/* Text Formatting */}
+        {/* Basic Formatting */}
         <ToolbarButton onClick={() => execCommand("bold")} icon={Bold} title="Bold (Ctrl+B)" />
         <ToolbarButton onClick={() => execCommand("italic")} icon={Italic} title="Italic (Ctrl+I)" />
         <ToolbarButton onClick={() => execCommand("underline")} icon={Underline} title="Underline (Ctrl+U)" />
@@ -468,9 +744,8 @@ const PPDUEditor = ({ content, onContentChange }: PPDUEditorProps) => {
         {/* Text Color */}
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="ghost" size="sm" className="h-8 w-8 p-0 relative" title="Text Color">
+            <Button variant="ghost" size="sm" className="h-8 w-8 p-0" title="Text Color">
               <span className="text-sm font-bold">A</span>
-              <span className="absolute bottom-1 left-1 right-1 h-1 bg-red-600 rounded" />
             </Button>
           </PopoverTrigger>
           <PopoverContent className="w-auto p-2">
@@ -504,7 +779,10 @@ const PPDUEditor = ({ content, onContentChange }: PPDUEditorProps) => {
                   key={color.value}
                   onClick={() => setHighlight(color.value)}
                   className="w-6 h-6 rounded border border-gray-300 hover:scale-110 transition-transform"
-                  style={{ backgroundColor: color.value === "transparent" ? "#fff" : color.value }}
+                  style={{
+                    backgroundColor:
+                      color.value === "transparent" ? "#fff" : color.value,
+                  }}
                   title={color.name}
                 />
               ))}
@@ -614,7 +892,7 @@ const PPDUEditor = ({ content, onContentChange }: PPDUEditorProps) => {
         <div
           ref={editorRef}
           contentEditable
-          className="min-h-[600px] max-w-full p-8 focus:outline-none overflow-x-auto [&_table]:max-w-full [&_table]:table-auto"
+          className="min-h-[600px] max-w-full p-8 focus:outline-none overflow-x-auto [&_table]:max-w-full [&_table]:table-auto [&_a]:text-blue-600 [&_a]:underline [&_a]:cursor-pointer"
           style={{
             fontFamily: "Calibri, Arial, sans-serif",
             fontSize: "11pt",
@@ -622,6 +900,21 @@ const PPDUEditor = ({ content, onContentChange }: PPDUEditorProps) => {
             width: "100%",
           }}
           onInput={handleInput}
+          onClick={(e) => {
+            // Word-like: Ctrl/Cmd + click opens the link; normal click keeps editing behavior.
+            const target = e.target as HTMLElement | null;
+            const link = target?.closest?.("a") as HTMLAnchorElement | null;
+            if (!link) return;
+            if (!link.getAttribute("href")) return;
+
+            // React synthetic event doesn't type ctrlKey/metaKey on the generic Event type here.
+            const mouseEvent = e as unknown as MouseEvent;
+            if (mouseEvent.ctrlKey || mouseEvent.metaKey) {
+              e.preventDefault();
+              e.stopPropagation();
+              window.open(link.href, "_blank", "noopener,noreferrer");
+            }
+          }}
           onPaste={(e) => {
             // Allow rich paste for tables and formatting
             const html = e.clipboardData.getData("text/html");
@@ -631,18 +924,26 @@ const PPDUEditor = ({ content, onContentChange }: PPDUEditorProps) => {
             }
           }}
           onKeyDown={(e) => {
+            if (e.key === "Tab" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+              const handled = handleTableTabNavigation(e.shiftKey);
+              if (handled) {
+                e.preventDefault();
+                return;
+              }
+            }
+
             // Handle keyboard shortcuts
             if (e.ctrlKey || e.metaKey) {
               switch (e.key.toLowerCase()) {
-                case 'b':
+                case "b":
                   e.preventDefault();
                   execCommand("bold");
                   break;
-                case 'i':
+                case "i":
                   e.preventDefault();
                   execCommand("italic");
                   break;
-                case 'u':
+                case "u":
                   e.preventDefault();
                   execCommand("underline");
                   break;
@@ -650,22 +951,38 @@ const PPDUEditor = ({ content, onContentChange }: PPDUEditorProps) => {
             }
           }}
         />
-        {/* Floating Add Row buttons next to each table heading */}
+        {/* Floating row action buttons next to each table heading */}
         {tableSections.map((section, i) => (
-          <button
+          <div
             key={`${section.tableIndex}-${i}`}
-            className="absolute right-3 flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors border border-primary/20 z-10"
+            className="absolute right-3 flex items-center gap-2 z-10"
             style={{ top: section.top }}
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              addRowToTable(section.tableIndex);
-            }}
-            title={`Add row to ${section.label}`}
           >
-            <Plus className="h-3 w-3" />
-            Add Row
-          </button>
+            <button
+              className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors border border-primary/20"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                addRowToTable(section.tableIndex);
+              }}
+              title={`Add row to ${section.label}`}
+            >
+              <Plus className="h-3 w-3" />
+              Add Row
+            </button>
+            <button
+              className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors border border-destructive/20"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                deleteLastRowFromTable(section.tableIndex);
+              }}
+              title={`Delete last row from ${section.label}`}
+            >
+              <Minus className="h-3 w-3" />
+              Delete Row
+            </button>
+          </div>
         ))}
       </div>
     </div>

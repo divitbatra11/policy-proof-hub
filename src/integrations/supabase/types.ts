@@ -233,37 +233,35 @@ export type Database = {
         Row: {
           action: string
           created_at: string
-          entity_id: string
-          entity_type: string
+          details: Json | null
           id: string
-          ip_address: string | null
-          metadata: Json | null
-          user_agent: string | null
+          policy_id: string | null
           user_id: string | null
         }
         Insert: {
           action: string
           created_at?: string
-          entity_id: string
-          entity_type: string
+          details?: Json | null
           id?: string
-          ip_address?: string | null
-          metadata?: Json | null
-          user_agent?: string | null
+          policy_id?: string | null
           user_id?: string | null
         }
         Update: {
           action?: string
           created_at?: string
-          entity_id?: string
-          entity_type?: string
+          details?: Json | null
           id?: string
-          ip_address?: string | null
-          metadata?: Json | null
-          user_agent?: string | null
+          policy_id?: string | null
           user_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "audit_logs_policy_id_fkey"
+            columns: ["policy_id"]
+            isOneToOne: false
+            referencedRelation: "policies"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "audit_logs_user_id_fkey"
             columns: ["user_id"]
@@ -312,6 +310,7 @@ export type Database = {
       groups: {
         Row: {
           created_at: string
+          created_by: string
           description: string | null
           id: string
           name: string
@@ -319,6 +318,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          created_by: string
           description?: string | null
           id?: string
           name: string
@@ -326,12 +326,21 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          created_by?: string
           description?: string | null
           id?: string
           name?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "groups_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       policies: {
         Row: {
@@ -369,25 +378,24 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "fk_current_version"
-            columns: ["current_version_id"]
-            isOneToOne: false
-            referencedRelation: "policy_versions"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "policies_created_by_fkey"
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "policies_current_version_id_fkey"
+            columns: ["current_version_id"]
+            isOneToOne: false
+            referencedRelation: "policy_versions"
+            referencedColumns: ["id"]
+          },
         ]
       }
       policy_assignments: {
         Row: {
-          assigned_by: string
-          created_at: string
+          assigned_at: string
           due_date: string | null
           group_id: string | null
           id: string
@@ -395,8 +403,7 @@ export type Database = {
           user_id: string | null
         }
         Insert: {
-          assigned_by: string
-          created_at?: string
+          assigned_at?: string
           due_date?: string | null
           group_id?: string | null
           id?: string
@@ -404,8 +411,7 @@ export type Database = {
           user_id?: string | null
         }
         Update: {
-          assigned_by?: string
-          created_at?: string
+          assigned_at?: string
           due_date?: string | null
           group_id?: string | null
           id?: string
@@ -413,13 +419,6 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: [
-          {
-            foreignKeyName: "policy_assignments_assigned_by_fkey"
-            columns: ["assigned_by"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "policy_assignments_group_id_fkey"
             columns: ["group_id"]
@@ -445,42 +444,46 @@ export type Database = {
       }
       policy_versions: {
         Row: {
-          change_summary: string | null
+          content_type: string | null
           created_at: string
-          file_name: string
+          created_by: string
+          file_name: string | null
           file_size: number | null
-          file_url: string
+          file_url: string | null
           id: string
           policy_id: string
-          published_at: string | null
-          published_by: string | null
           version_number: number
         }
         Insert: {
-          change_summary?: string | null
+          content_type?: string | null
           created_at?: string
-          file_name: string
+          created_by: string
+          file_name?: string | null
           file_size?: number | null
-          file_url: string
+          file_url?: string | null
           id?: string
           policy_id: string
-          published_at?: string | null
-          published_by?: string | null
           version_number: number
         }
         Update: {
-          change_summary?: string | null
+          content_type?: string | null
           created_at?: string
-          file_name?: string
+          created_by?: string
+          file_name?: string | null
           file_size?: number | null
-          file_url?: string
+          file_url?: string | null
           id?: string
           policy_id?: string
-          published_at?: string | null
-          published_by?: string | null
           version_number?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "policy_versions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "policy_versions_policy_id_fkey"
             columns: ["policy_id"]
@@ -488,9 +491,37 @@ export type Database = {
             referencedRelation: "policies"
             referencedColumns: ["id"]
           },
+        ]
+      }
+      ppdu_brief_library: {
+        Row: {
+          created_at: string
+          created_by: string
+          html_content: string
+          id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          html_content: string
+          id?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          html_content?: string
+          id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
           {
-            foreignKeyName: "policy_versions_published_by_fkey"
-            columns: ["published_by"]
+            foreignKeyName: "ppdu_brief_library_created_by_fkey"
+            columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -499,31 +530,25 @@ export type Database = {
       }
       ppdu_briefs: {
         Row: {
-          content: string
-          created_at: string | null
-          created_by: string | null
+          created_at: string
+          created_by: string
+          html_content: string
           id: string
-          title: string
-          updated_at: string | null
-          updated_by: string | null
+          updated_at: string
         }
         Insert: {
-          content?: string
-          created_at?: string | null
-          created_by?: string | null
+          created_at?: string
+          created_by: string
+          html_content: string
           id?: string
-          title?: string
-          updated_at?: string | null
-          updated_by?: string | null
+          updated_at?: string
         }
         Update: {
-          content?: string
-          created_at?: string | null
-          created_by?: string | null
+          created_at?: string
+          created_by?: string
+          html_content?: string
           id?: string
-          title?: string
-          updated_at?: string | null
-          updated_by?: string | null
+          updated_at?: string
         }
         Relationships: [
           {
@@ -533,19 +558,12 @@ export type Database = {
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "ppdu_briefs_updated_by_fkey"
-            columns: ["updated_by"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
         ]
       }
       profiles: {
         Row: {
+          avatar_url: string | null
           created_at: string
-          department: string | null
           email: string
           full_name: string
           id: string
@@ -553,8 +571,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          avatar_url?: string | null
           created_at?: string
-          department?: string | null
           email: string
           full_name: string
           id: string
@@ -562,8 +580,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          avatar_url?: string | null
           created_at?: string
-          department?: string | null
           email?: string
           full_name?: string
           id?: string
@@ -575,60 +593,41 @@ export type Database = {
       project_intake_forms: {
         Row: {
           created_at: string
-          created_by: string | null
+          created_by: string
           file_name: string | null
           file_path: string | null
-          file_size: number | null
-          file_url: string | null
           form_data: Json
           html_content: string | null
           id: string
-          project_name: string
           title: string
           updated_at: string
-          updated_by: string | null
         }
         Insert: {
           created_at?: string
-          created_by?: string | null
+          created_by: string
           file_name?: string | null
           file_path?: string | null
-          file_size?: number | null
-          file_url?: string | null
-          form_data: Json
-          html_content?: string | null
-          id?: string
-          project_name: string
-          title: string
-          updated_at?: string
-          updated_by?: string | null
-        }
-        Update: {
-          created_at?: string
-          created_by?: string | null
-          file_name?: string | null
-          file_path?: string | null
-          file_size?: number | null
-          file_url?: string | null
           form_data?: Json
           html_content?: string | null
           id?: string
-          project_name?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          file_name?: string | null
+          file_path?: string | null
+          form_data?: Json
+          html_content?: string | null
+          id?: string
           title?: string
           updated_at?: string
-          updated_by?: string | null
         }
         Relationships: [
           {
             foreignKeyName: "project_intake_forms_created_by_fkey"
             columns: ["created_by"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "project_intake_forms_updated_by_fkey"
-            columns: ["updated_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -681,8 +680,49 @@ export type Database = {
           },
         ]
       }
+      task_checklist_items: {
+        Row: {
+          created_at: string
+          id: string
+          is_completed: boolean
+          item_text: string
+          sort_order: number
+          task_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_completed?: boolean
+          item_text: string
+          sort_order?: number
+          task_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_completed?: boolean
+          item_text?: string
+          sort_order?: number
+          task_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_checklist_items_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tasks: {
         Row: {
+          attachment_name: string | null
+          attachment_path: string | null
+          board_column: string
           created_at: string
           created_by: string
           deleted_at: string | null
@@ -697,6 +737,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          attachment_name?: string | null
+          attachment_path?: string | null
+          board_column?: string
           created_at?: string
           created_by: string
           deleted_at?: string | null
@@ -711,6 +754,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          attachment_name?: string | null
+          attachment_path?: string | null
+          board_column?: string
           created_at?: string
           created_by?: string
           deleted_at?: string | null
@@ -784,33 +830,37 @@ export type Database = {
   }
 }
 
-type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
-
-type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
+type PublicSchema = Database[Extract<keyof Database, "public">]
 
 export type Tables<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+  PublicTableNameOrOptions extends
+    | keyof (PublicSchema["Tables"] & PublicSchema["Views"])
+    | { schema: keyof Database },
+  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
+    ? keyof (Database[PublicTableNameOrOptions["schema"]] extends {
+        Tables: any
+        Views: any
+      }
+        ? Database[PublicTableNameOrOptions["schema"]]["Tables"] &
+            Database[PublicTableNameOrOptions["schema"]]["Views"]
+        : never)
     : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
-      Row: infer R
+> = PublicTableNameOrOptions extends { schema: keyof Database }
+  ? (Database[PublicTableNameOrOptions["schema"]] extends {
+      Tables: any
+      Views: any
     }
-    ? R
-    : never
-  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])
-    ? (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+      ? (Database[PublicTableNameOrOptions["schema"]]["Tables"] &
+          Database[PublicTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+          Row: infer R
+        }
+        ? R
+        : never
+      : never)
+  : PublicTableNameOrOptions extends keyof (PublicSchema["Tables"] &
+        PublicSchema["Views"])
+    ? (PublicSchema["Tables"] &
+        PublicSchema["Views"])[PublicTableNameOrOptions] extends {
         Row: infer R
       }
       ? R
@@ -818,24 +868,26 @@ export type Tables<
     : never
 
 export type TablesInsert<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+  PublicTableNameOrOptions extends
+    | keyof PublicSchema["Tables"]
+    | { schema: keyof Database },
+  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
+    ? keyof (Database[PublicTableNameOrOptions["schema"]] extends {
+        Tables: any
+      }
+        ? Database[PublicTableNameOrOptions["schema"]]["Tables"]
+        : never)
     : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
-      Insert: infer I
-    }
-    ? I
+> = PublicTableNameOrOptions extends { schema: keyof Database }
+  ? Database[PublicTableNameOrOptions["schema"]] extends { Tables: any }
+    ? Database[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+        Insert: infer I
+      }
+      ? I
+      : never
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+  : PublicTableNameOrOptions extends keyof PublicSchema["Tables"]
+    ? PublicSchema["Tables"][PublicTableNameOrOptions] extends {
         Insert: infer I
       }
       ? I
@@ -843,24 +895,26 @@ export type TablesInsert<
     : never
 
 export type TablesUpdate<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+  PublicTableNameOrOptions extends
+    | keyof PublicSchema["Tables"]
+    | { schema: keyof Database },
+  TableName extends PublicTableNameOrOptions extends { schema: keyof Database }
+    ? keyof (Database[PublicTableNameOrOptions["schema"]] extends {
+        Tables: any
+      }
+        ? Database[PublicTableNameOrOptions["schema"]]["Tables"]
+        : never)
     : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
-      Update: infer U
-    }
-    ? U
+> = PublicTableNameOrOptions extends { schema: keyof Database }
+  ? Database[PublicTableNameOrOptions["schema"]] extends { Tables: any }
+    ? Database[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+        Update: infer U
+      }
+      ? U
+      : never
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+  : PublicTableNameOrOptions extends keyof PublicSchema["Tables"]
+    ? PublicSchema["Tables"][PublicTableNameOrOptions] extends {
         Update: infer U
       }
       ? U
@@ -868,37 +922,43 @@ export type TablesUpdate<
     : never
 
 export type Enums<
-  DefaultSchemaEnumNameOrOptions extends
-    | keyof DefaultSchema["Enums"]
-    | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+  PublicEnumNameOrOptions extends
+    | keyof PublicSchema["Enums"]
+    | { schema: keyof Database },
+  EnumName extends PublicEnumNameOrOptions extends { schema: keyof Database }
+    ? keyof (Database[PublicEnumNameOrOptions["schema"]] extends { Enums: any }
+        ? Database[PublicEnumNameOrOptions["schema"]]["Enums"]
+        : never)
     : never = never,
-> = DefaultSchemaEnumNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
-  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
-    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+> = PublicEnumNameOrOptions extends { schema: keyof Database }
+  ? Database[PublicEnumNameOrOptions["schema"]] extends { Enums: any }
+    ? Database[PublicEnumNameOrOptions["schema"]]["Enums"][EnumName]
+    : never
+  : PublicEnumNameOrOptions extends keyof PublicSchema["Enums"]
+    ? PublicSchema["Enums"][PublicEnumNameOrOptions]
     : never
 
 export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
-    | keyof DefaultSchema["CompositeTypes"]
-    | { schema: keyof DatabaseWithoutInternals },
+    | keyof PublicSchema["CompositeTypes"]
+    | { schema: keyof Database },
   CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
+    schema: keyof Database
   }
-    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    ? keyof (Database[PublicCompositeTypeNameOrOptions["schema"]] extends {
+        CompositeTypes: any
+      }
+        ? Database[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+        : never)
     : never = never,
-> = PublicCompositeTypeNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
-  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
-    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+> = PublicCompositeTypeNameOrOptions extends { schema: keyof Database }
+  ? Database[PublicCompositeTypeNameOrOptions["schema"]] extends {
+      CompositeTypes: any
+    }
+    ? Database[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+    : never
+  : PublicCompositeTypeNameOrOptions extends keyof PublicSchema["CompositeTypes"]
+    ? PublicSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
     : never
 
 export const Constants = {

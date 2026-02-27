@@ -1,13 +1,28 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.74.0';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
-};
+const ALLOWED_ORIGINS = [
+  'https://dev.ppdu.int.gov.ab.ca',
+  'http://localhost:8080',
+  'http://localhost:3000',
+];
+
+function getCorsOrigin(req: Request): string {
+  const origin = req.headers.get('Origin') ?? '';
+  return ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+}
+
+function corsHeaders(req: Request) {
+  return {
+    'Access-Control-Allow-Origin': getCorsOrigin(req),
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Vary': 'Origin',
+  };
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response('ok', { headers: corsHeaders(req) });
   }
 
   try {
@@ -20,7 +35,7 @@ Deno.serve(async (req) => {
     if (!authHeader?.startsWith('Bearer ')) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders(req), 'Content-Type': 'application/json' },
       });
     }
 
@@ -34,7 +49,7 @@ Deno.serve(async (req) => {
       console.error('Auth error:', claimsError);
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders(req), 'Content-Type': 'application/json' },
       });
     }
 
@@ -51,7 +66,7 @@ Deno.serve(async (req) => {
       console.error('Forbidden: user role is', profile?.role);
       return new Response(JSON.stringify({ error: 'Forbidden: admin or publisher role required' }), {
         status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders(req), 'Content-Type': 'application/json' },
       });
     }
 
@@ -150,7 +165,7 @@ Deno.serve(async (req) => {
         groupId
       }),
       {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders(req), 'Content-Type': 'application/json' },
         status: 200,
       }
     );
@@ -159,7 +174,7 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({ error: 'An internal error occurred' }),
       {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        headers: { ...corsHeaders(req), 'Content-Type': 'application/json' },
         status: 500,
       }
     );

@@ -8,6 +8,7 @@ import {
   FilePlus,
   Check,
   AlertCircle,
+  BookMarked,
 } from "lucide-react";
 
 interface PPDUToolbarProps {
@@ -16,7 +17,9 @@ interface PPDUToolbarProps {
   onDownload: () => void;
   onImport: () => void;
   onNewDocument: () => void;
+  onSaveToLibrary: () => void;
   isImporting: boolean;
+  isSavingToLibrary: boolean;
   saveStatus: "idle" | "saving" | "saved" | "error";
 }
 
@@ -26,7 +29,9 @@ const PPDUToolbar = ({
   onDownload,
   onImport,
   onNewDocument,
+  onSaveToLibrary,
   isImporting,
+  isSavingToLibrary,
   saveStatus,
 }: PPDUToolbarProps) => {
   return (
@@ -79,6 +84,18 @@ const PPDUToolbar = ({
             <Upload className="h-4 w-4 mr-2" />
           )}
           Import .docx
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={onSaveToLibrary}
+          disabled={isSavingToLibrary}
+        >
+          {isSavingToLibrary ? (
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          ) : (
+            <BookMarked className="h-4 w-4 mr-2" />
+          )}
+          Save to Library
         </Button>
         <Button variant="outline" onClick={onDownload}>
           <Download className="h-4 w-4 mr-2" />
