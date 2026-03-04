@@ -7,6 +7,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useState, useEffect } from "react";
 import { Document, Page, pdfjs } from 'react-pdf';
+import 'react-pdf/dist/Page/TextLayer.css';
+import 'react-pdf/dist/Page/AnnotationLayer.css';
 
 // Configure PDF.js worker
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
@@ -234,8 +236,8 @@ const PolicyViewer = ({ policy }: PolicyViewerProps) => {
                         >
                           <Page
                             pageNumber={pageNumber}
-                            renderTextLayer={false}
-                            renderAnnotationLayer={false}
+                            renderTextLayer={true}
+                            renderAnnotationLayer={true}
                             className="shadow-lg"
                             width={Math.min(window.innerWidth * 0.6, 700)}
                           />

@@ -50,7 +50,7 @@ const PDF_BASE_MARGIN_MM = 15;
 const PDF_HEADER_RESERVED_MM = 30; // space at top of every page for the header
 const META_TABLE_WIDTH_MM = 110;
 const META_NARROW_COL_MM = 30;
-const PDF_HEADER_GAP_MM = 6; // extra breathing room below the header on every page
+const PDF_HEADER_GAP_MM = 8; // extra breathing room below the header on every page
 
 
 const isUuid = (s: string) =>
@@ -167,7 +167,59 @@ function applyIndentBasedLists(html: string) {
   );
 }
 
-function drawAlbertaFooter(pdf: any, text: string) {
+/**
+ * Extract the line starting with "Effective Date" from the body HTML.
+ * Handles:
+ *  - Entire <p> whose text starts with "Effective Date"
+ *  - A <br>-separated line inside a <p>
+ *  - Text wrapped in inline tags like <strong>, <span>, <em>
+ * Returns { cleaned, effectiveDate } with that line removed from the HTML.
+ */
+function extractEffectiveDate(html: string): { cleaned: string; effectiveDate: string } {
+  let effectiveDate = "";
+
+  // Helper: strip HTML tags to get plain text
+  const stripTags = (s: string) => s.replace(/<[^>]*>/g, "").trim();
+
+  let cleaned = html;
+
+  // 1) Try: entire <p> whose visible text starts with "Effective Date"
+  cleaned = cleaned.replace(
+    /<p[^>]*>([\s\S]*?)<\/p>/gi,
+    (match, inner) => {
+      const plain = stripTags(inner);
+      if (/^Effective\s+Date/i.test(plain) && !effectiveDate) {
+        effectiveDate = plain;
+        return "";
+      }
+      return match;
+    }
+  );
+
+  if (effectiveDate) return { cleaned, effectiveDate };
+
+  // 2) Try: a <br>-separated line inside a <p>
+  cleaned = html; // reset
+  cleaned = cleaned.replace(
+    /<p[^>]*>([\s\S]*?)<\/p>/gi,
+    (match, inner: string) => {
+      // Split on <br> variants
+      const lines = inner.split(/<br\s*\/?>/i);
+      const idx = lines.findIndex((ln: string) => /Effective\s+Date/i.test(stripTags(ln)));
+      if (idx !== -1 && !effectiveDate) {
+        effectiveDate = stripTags(lines[idx]);
+        lines.splice(idx, 1);
+        const remaining = lines.filter((l: string) => stripTags(l)).join("<br/>");
+        return remaining ? `<p>${remaining}</p>` : "";
+      }
+      return match;
+    }
+  );
+
+  return { cleaned, effectiveDate };
+}
+
+function drawAlbertaFooter(pdf: any, text: string, effectiveDateText?: string) {
   const pageW = pdf.internal.pageSize.getWidth();
   const pageH = pdf.internal.pageSize.getHeight();
 
@@ -177,11 +229,21 @@ function drawAlbertaFooter(pdf: any, text: string) {
   const footerTopY = pageH - (PDF_BASE_MARGIN_MM + PDF_FOOTER_RESERVED_MM);
 
   const yLine = footerTopY + 2.2;
-  const yText = yLine + 5.5;
 
   pdf.setDrawColor(...FOOTER_BLUE_RGB);
   pdf.setLineWidth(0.6);
   pdf.line(marginX, yLine, pageW - marginX, yLine);
+
+  let yText = yLine + 5.5;
+
+  // If this is the last page and we have an effective date, render it bolded above classification
+  if (effectiveDateText) {
+    pdf.setFont("times", "bold");
+    pdf.setFontSize(10.5);
+    pdf.setTextColor(20, 20, 20);
+    pdf.text(effectiveDateText, marginX, yText);
+    yText += 4.5;
+  }
 
   pdf.setFont("times", "normal");
   pdf.setFontSize(10.5);
@@ -386,6 +448,124 @@ function extractPolicyMeta(rawText: string) {
   return { section, number, subject };
 }
 
+/**
+ * When Mammoth splits a numbered list around non-list content (e.g. a "Note:"
+ * paragraph), each new <ol> restarts at 1.  This function physically merges
+ * consecutive top-level <ol> blocks into a single <ol>, embedding the
+ * interrupting content (like "Note:") as a non-counted <li> so the counter
+ * keeps running uninterrupted.
+ *
+ * Resets happen when:
+ *  - A heading (<h1>–<h6>) appears between lists (new section)
+ */
+function continueOlNumbering(html: string): string {
+  // Tokenise: split the HTML into top-level <ol>…</ol> blocks and everything else.
+  // Must handle nested <ol> correctly by counting open/close tags.
+  const parts: { type: "ol" | "other"; text: string }[] = [];
+
+  // Find all top-level <ol>…</ol> blocks, respecting nesting
+  let cursor = 0;
+  const openRe = /<ol\b[^>]*>/gi;
+  let om: RegExpExecArray | null;
+
+  while ((om = openRe.exec(html)) !== null) {
+    const olStart = om.index;
+
+    // Find the matching </ol> by counting nesting depth
+    let depth = 1;
+    let pos = olStart + om[0].length;
+    while (depth > 0 && pos < html.length) {
+      const nextOpen = html.indexOf("<ol", pos);
+      const nextClose = html.indexOf("</ol>", pos);
+
+      if (nextClose === -1) break; // malformed, stop
+
+      if (nextOpen !== -1 && nextOpen < nextClose) {
+        // Check it's actually an <ol tag (not e.g. <olive)
+        const afterTag = html[nextOpen + 3];
+        if (afterTag === ">" || afterTag === " " || afterTag === "\t" || afterTag === "\n") {
+          depth++;
+          pos = nextOpen + 3;
+        } else {
+          pos = nextOpen + 3;
+        }
+      } else {
+        depth--;
+        if (depth === 0) {
+          const olEnd = nextClose + 5; // length of "</ol>"
+
+          // Push any content before this <ol> as "other"
+          if (olStart > cursor) {
+            parts.push({ type: "other", text: html.slice(cursor, olStart) });
+          }
+          parts.push({ type: "ol", text: html.slice(olStart, olEnd) });
+          cursor = olEnd;
+          openRe.lastIndex = olEnd; // resume regex after this block
+          break;
+        } else {
+          pos = nextClose + 5;
+        }
+      }
+    }
+  }
+  if (cursor < html.length) {
+    parts.push({ type: "other", text: html.slice(cursor) });
+  }
+
+  // Extract the inner content of an <ol>…</ol> (the <li> items)
+  function olInner(ol: string): string {
+    return ol.replace(/^<ol\b[^>]*>/i, "").replace(/<\/ol>\s*$/i, "");
+  }
+
+  // Build merged output by grouping consecutive <ol> runs
+  const result: string[] = [];
+  let i = 0;
+
+  while (i < parts.length) {
+    if (parts[i].type !== "ol") {
+      result.push(parts[i].text);
+      i++;
+      continue;
+    }
+
+    // Start of a run: collect the first <ol>'s opening tag and inner items
+    const openTag = parts[i].text.match(/^<ol\b[^>]*>/i)?.[0] ?? "<ol>";
+    const runParts: string[] = [olInner(parts[i].text)];
+    i++;
+
+    // Absorb subsequent <ol> blocks separated by non-heading content
+    while (i < parts.length) {
+      if (parts[i].type === "other") {
+        const sep = parts[i].text.trim();
+        // If it's a heading or empty, break the run
+        if (!sep || /<h[1-6]\b/i.test(sep)) break;
+
+        // Check if the next part after this separator is another <ol>
+        if (i + 1 < parts.length && parts[i + 1].type === "ol") {
+          // Embed the separator as a non-counted item inside the list
+          runParts.push(
+            `<li style="display:block; list-style:none; padding-left:0; counter-increment:none">${sep}</li>`
+          );
+          i++; // skip the "other"
+          // Now absorb the next <ol>'s items
+          runParts.push(olInner(parts[i].text));
+          i++;
+        } else {
+          break;
+        }
+      } else {
+        // Another <ol> immediately adjacent (no separator)
+        runParts.push(olInner(parts[i].text));
+        i++;
+      }
+    }
+
+    result.push(openTag + runParts.join("") + "</ol>");
+  }
+
+  return result.join("");
+}
+
 function normalizePolicyHtml(html: string) {
   let clean = html;
 
@@ -393,6 +573,9 @@ function normalizePolicyHtml(html: string) {
 
   // ✅ keep real <ul>/<ol>/<li> from Mammoth (and normalize ordered list types)
   clean = normalizeListTypes(clean);
+
+  // ✅ Continue <ol> numbering across interruptions (e.g. "Note:" paragraphs)
+  clean = continueOlNumbering(clean);
 
   clean = clean.replace(/Classification:\s*Protected\s+[AB]\s*/gi, "");
   clean = clean.replace(/(<p>\s*<\/p>){2,}/g, "<p>&nbsp;</p>");
@@ -402,7 +585,7 @@ function normalizePolicyHtml(html: string) {
   );
   clean = ensureBlankLineAfterPolicyStatement(clean);
   clean = clean.replace(/<ul>([\s\S]*?)<\/ul>/g, (m) => m.replace(/<p>\s*<\/p>/g, ""));
-  clean = sanitize(clean, { USE_PROFILES: { html: true } });
+  clean = sanitize(clean, { USE_PROFILES: { html: true }, ADD_ATTR: ["start", "style"] });
   return clean;
 }
 
@@ -546,6 +729,16 @@ function wrapWithPolicyTemplate(opts: {
         left: 0;
         top: 0;
         font-weight: 600;
+      }
+
+      /* Non-counted items embedded in merged lists (e.g. Note: paragraphs) */
+      li[style*="counter-increment"] {
+        counter-increment: none !important;
+        padding-left: 0;
+        margin-left: -22px;
+      }
+      li[style*="counter-increment"]::before {
+        content: none !important;
       }
 
       /* Ordered lists: level 2 = a., b., c. */
@@ -716,6 +909,7 @@ const UploadPolicyDocs = () => {
   // Optional: attach to existing policy; if empty we auto-create one
   const [policyId, setPolicyId] = useState<string>("");
   const [versionNumber, setVersionNumber] = useState<number>(1);
+  const [effectiveDate, setEffectiveDate] = useState<string>("");
 
   const previewRef = useRef<HTMLDivElement>(null);
   
@@ -793,7 +987,9 @@ const UploadPolicyDocs = () => {
       setSubject(meta.subject);
 
       const normalized = normalizePolicyHtml(html);
-      setDocHtml(normalized);
+      const { cleaned, effectiveDate: ed } = extractEffectiveDate(normalized);
+      setEffectiveDate(ed);
+      setDocHtml(cleaned);
 
       if (messages?.length) console.info("[UploadPolicyDocs] Mammoth messages:", messages);
       toast.success("Document parsed. Review header fields, then Convert & Upload.");
@@ -814,111 +1010,397 @@ const UploadPolicyDocs = () => {
 
   const generatePdfBlob = async (): Promise<Blob> => {
     console.log("[UploadPolicyDocs] Generating PDF…");
-    const PDF_FOOTER_RESERVED_MM = 12;
-    const html = wrapWithPolicyTemplate({
-      section,
-      number,
-      subject,
-      bodyHtml: docHtml || "<p>(No content parsed)</p>",
-      mode: "pdf",
-    });
 
-    const iframe = document.createElement("iframe");
-    iframe.style.position = "fixed";
-    iframe.style.left = "-99999px";
-    iframe.style.top = "-99999px";
-    document.body.appendChild(iframe);
+    // Parse the body HTML into a temporary container to walk the DOM
+    const container = document.createElement("div");
+    container.innerHTML = docHtml || "<p>(No content parsed)</p>";
 
-    try {
-      iframe.contentDocument?.open();
-      iframe.contentDocument?.write(html);
-      iframe.contentDocument?.close();
+    const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
+    const pageW = pdf.internal.pageSize.getWidth();   // 210
+    const pageH = pdf.internal.pageSize.getHeight();   // 297
 
-      await waitForIframeAssets(iframe);
+    const marginTop = PDF_BASE_MARGIN_MM + PDF_HEADER_RESERVED_MM + PDF_HEADER_GAP_MM; // ~51
+    const marginBottom = PDF_BASE_MARGIN_MM + PDF_FOOTER_RESERVED_MM + PDF_HEADER_GAP_MM; // ~33 (includes gap above footer)
+    const marginSide = PDF_BASE_MARGIN_MM;                                              // 15
+    const contentW = pageW - marginSide * 2;                                            // 180
+    const maxY = pageH - marginBottom;
 
-      const target = iframe.contentDocument?.body as HTMLElement;
-      const PDF_FOOTER_RESERVED_MM = 12;
+    let curY = marginTop;
+    let pageNum = 1;
 
-      const margin: [number, number, number, number] = [
-        PDF_BASE_MARGIN_MM + PDF_HEADER_RESERVED_MM + PDF_HEADER_GAP_MM,
-        PDF_BASE_MARGIN_MM,
-        PDF_BASE_MARGIN_MM + PDF_FOOTER_RESERVED_MM,
-        PDF_BASE_MARGIN_MM,
-      ];
+    /** Add a new page and reset Y cursor */
+    function newPage() {
+      pdf.addPage();
+      pageNum++;
+      curY = marginTop;
+    }
 
+    /** Ensure there's at least `need` mm left; if not, start a new page */
+    function ensureSpace(need: number) {
+      if (curY + need > maxY) newPage();
+    }
 
-      // Render HTML to canvas using html2canvas
-      const canvas = await html2canvas(target, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-      });
+    /** Write a block of text with word-wrap, returns final Y */
+    function writeBlock(
+      text: string,
+      x: number,
+      maxW: number,
+      opts: {
+        fontFamily?: string;
+        fontStyle?: string;
+        fontSize?: number;
+        textColor?: [number, number, number];
+        lineHeight?: number;
+        prefix?: string;
+      } = {}
+    ) {
+      const family = opts.fontFamily ?? "times";
+      const style = opts.fontStyle ?? "normal";
+      const size = opts.fontSize ?? 11;
+      const color = opts.textColor ?? [17, 24, 39];
+      const lh = opts.lineHeight ?? 5.8;
 
-      // Create jsPDF instance
-      const pdf = new jsPDF({
-        unit: "mm",
-        format: "a4",
-        orientation: "portrait",
-      });
+      pdf.setFont(family, style);
+      pdf.setFontSize(size);
+      pdf.setTextColor(...color);
 
-      const pageW = pdf.internal.pageSize.getWidth();
-      const pageH = pdf.internal.pageSize.getHeight();
+      // If there's a prefix (like "1. " or "a. "), measure it and adjust
+      let prefixW = 0;
+      if (opts.prefix) {
+        prefixW = pdf.getTextWidth(opts.prefix);
+      }
 
-      // Calculate content area dimensions
-      const contentW = pageW - margin[1] - margin[3]; // left + right margins
-      const contentH = pageH - margin[0] - margin[2]; // top + bottom margins
+      const wrapW = maxW - prefixW;
+      const lines: string[] = pdf.splitTextToSize(text, wrapW);
 
-      // Scale canvas to fit the content width
-      const imgW = contentW;
-      const imgH = (canvas.height * contentW) / canvas.width;
+      for (let i = 0; i < lines.length; i++) {
+        ensureSpace(lh);
+        if (i === 0 && opts.prefix) {
+          pdf.text(opts.prefix, x, curY);
+          pdf.text(lines[i], x + prefixW, curY);
+        } else {
+          pdf.text(lines[i], x + prefixW, curY);
+        }
+        curY += lh;
+      }
+    }
 
-      // Calculate how many pages are needed
-      const totalPages = Math.ceil(imgH / contentH);
+    /** Recursively walk DOM nodes and render to PDF */
+    function walkNodes(parent: Element | DocumentFragment, indentLevel: number, olCounters: number[]) {
+      const children = parent.childNodes;
+      for (let i = 0; i < children.length; i++) {
+        const node = children[i];
 
-      for (let i = 0; i < totalPages; i++) {
-        if (i > 0) pdf.addPage();
-
-        // Calculate the portion of the canvas for this page
-        const sourceY = (i * contentH / imgH) * canvas.height;
-        const sourceH = Math.min((contentH / imgH) * canvas.height, canvas.height - sourceY);
-
-        // Create a temporary canvas for this page slice
-        const pageCanvas = document.createElement("canvas");
-        pageCanvas.width = canvas.width;
-        pageCanvas.height = sourceH;
-        const ctx = pageCanvas.getContext("2d");
-        if (ctx) {
-          ctx.drawImage(
-            canvas,
-            0, sourceY, canvas.width, sourceH,
-            0, 0, canvas.width, sourceH
-          );
+        if (node.nodeType === Node.TEXT_NODE) {
+          const txt = (node.textContent || "").replace(/\s+/g, " ").trim();
+          if (!txt) continue;
+          const x = marginSide + indentLevel * 8;
+          const w = contentW - indentLevel * 8;
+          writeBlock(txt, x, w);
+          continue;
         }
 
-        const pageImgData = pageCanvas.toDataURL("image/jpeg", 0.98);
-        const sliceH = (sourceH / canvas.height) * imgH;
-        pdf.addImage(pageImgData, "JPEG", margin[3], margin[0], imgW, sliceH);
+        if (node.nodeType !== Node.ELEMENT_NODE) continue;
+        const el = node as HTMLElement;
+        const tag = el.tagName.toLowerCase();
+
+        // Skip images (they'd need addImage separately)
+        if (tag === "img") continue;
+
+        // Headings
+        if (/^h[1-6]$/.test(tag)) {
+          const level = parseInt(tag[1]);
+          const txt = (el.textContent || "").trim();
+          if (!txt) continue;
+
+          curY += level <= 2 ? 4 : 3; // space before heading
+          ensureSpace(12);
+
+          // Draw heading underline for h2
+          if (level === 2) {
+            writeBlock(txt, marginSide, contentW, {
+              fontStyle: "bold",
+              fontSize: 14,
+              textColor: [15, 23, 42],
+              lineHeight: 6.4,
+            });
+            pdf.setDrawColor(229, 231, 235);
+            pdf.setLineWidth(0.3);
+            pdf.line(marginSide, curY, pageW - marginSide, curY);
+            curY += 2;
+          } else {
+            writeBlock(txt, marginSide, contentW, {
+              fontStyle: "bold",
+              fontSize: level === 1 ? 16 : level === 3 ? 12 : 11,
+              textColor: [15, 23, 42],
+              lineHeight: 6.4,
+            });
+          }
+          curY += 2; // space after heading
+          continue;
+        }
+
+        // Paragraphs
+        if (tag === "p") {
+          const txt = (el.textContent || "").trim();
+          if (!txt) {
+            curY += 3; // blank paragraph = gap (matches old CSS `margin: 8px 0`)
+            continue;
+          }
+
+          // Check if it has a policy-li class (indent-based list from applyIndentBasedLists)
+          if (el.classList.contains("policy-li")) {
+            const level = el.classList.contains("level-3") ? 3
+              : el.classList.contains("level-2") ? 2
+              : el.classList.contains("level-1") ? 1 : 0;
+            const x = marginSide + (level + 1) * 6;
+            const w = contentW - (level + 1) * 6;
+            const bullets = ["•", "◦", "▪", "–"];
+            writeBlock(txt, x, w, { prefix: bullets[level] + " " });
+            continue;
+          }
+
+          // Check for strong/bold wrapping
+          const isBold = el.querySelector("strong, b") !== null &&
+            el.querySelector("strong, b")?.textContent?.trim() === txt;
+
+          const x = marginSide + indentLevel * 8;
+          const w = contentW - indentLevel * 8;
+          writeBlock(txt, x, w, { fontStyle: isBold ? "bold" : "normal" });
+          curY += 3; // paragraph spacing (matches old CSS `p { margin: 8px 0; }`)
+          continue;
+        }
+
+        // Ordered lists
+        if (tag === "ol") {
+          const parentIsLi = (el.parentElement?.tagName || "").toLowerCase() === "li";
+          const parentIsList = ["ol", "ul", "li"].includes((el.parentElement?.tagName || "").toLowerCase());
+          // Increment indent when nested inside another list element
+          const nestedIndent = parentIsList ? indentLevel + 1 : indentLevel;
+          if (!parentIsLi) curY += 2;
+          const startAttr = el.getAttribute("start");
+          const startVal = startAttr ? parseInt(startAttr) - 1 : 0;
+          const newCounters = parentIsList ? [...olCounters, startVal] : [...olCounters, startVal];
+          walkNodes(el, nestedIndent, newCounters);
+          if (!parentIsLi) curY += 2;
+          continue;
+        }
+
+        // Unordered lists
+        if (tag === "ul") {
+          const parentIsLi = (el.parentElement?.tagName || "").toLowerCase() === "li";
+          const parentIsList = ["ol", "ul", "li"].includes((el.parentElement?.tagName || "").toLowerCase());
+          const nestedIndent = parentIsList ? indentLevel + 1 : indentLevel;
+          if (!parentIsLi) curY += 2;
+          walkNodes(el, nestedIndent, olCounters);
+          if (!parentIsLi) curY += 2;
+          continue;
+        }
+
+        // List items
+        if (tag === "li") {
+          // Check for non-counted items (embedded Note: paragraphs)
+          const style = el.getAttribute("style") || "";
+          if (/counter-increment\s*:\s*none/i.test(style)) {
+            // Render as regular content at current indent
+            walkNodes(el, indentLevel, olCounters);
+            continue;
+          }
+
+          const parentTag = (el.parentElement?.tagName || "").toLowerCase();
+          const txt = (el.textContent || "").trim();
+          if (!txt) continue;
+
+          // Detect effective indent from margin-left style (Mammoth often uses flat <ol> with margin-left)
+          let effectiveIndent = indentLevel;
+          const marginMatch = style.match(/margin-left\s*:\s*([\d.]+)\s*(px|pt|mm|cm|in)/i);
+          if (marginMatch) {
+            const val = parseFloat(marginMatch[1]);
+            const unit = marginMatch[2].toLowerCase();
+            // Convert to approximate indent levels (~36pt or ~48px per level)
+            let px = val;
+            if (unit === "pt") px = val * 1.333;
+            else if (unit === "mm") px = val * 3.78;
+            else if (unit === "cm") px = val * 37.8;
+            else if (unit === "in") px = val * 96;
+            const extraLevels = Math.round(px / 48);
+            effectiveIndent = indentLevel + extraLevels;
+          }
+          // Also check parent <ol>/<ul> for margin-left
+          if (!marginMatch && el.parentElement) {
+            const parentStyle = el.parentElement.getAttribute("style") || "";
+            const parentMarginMatch = parentStyle.match(/margin-left\s*:\s*([\d.]+)\s*(px|pt|mm|cm|in)/i);
+            if (parentMarginMatch) {
+              const val = parseFloat(parentMarginMatch[1]);
+              const unit = parentMarginMatch[2].toLowerCase();
+              let px = val;
+              if (unit === "pt") px = val * 1.333;
+              else if (unit === "mm") px = val * 3.78;
+              else if (unit === "cm") px = val * 37.8;
+              else if (unit === "in") px = val * 96;
+              const extraLevels = Math.round(px / 48);
+              effectiveIndent = indentLevel + extraLevels;
+            }
+          }
+
+          const x = marginSide + effectiveIndent * 8 + 6;
+          const w = contentW - effectiveIndent * 8 - 6;
+
+          // Determine prefix based on effective indent level
+          let prefix: string;
+          if (parentTag === "ol") {
+            // Use the deeper of DOM nesting level or margin-based indent for prefix style
+            const prefixLevel = Math.max(olCounters.length - 1, effectiveIndent);
+            const level = olCounters.length - 1;
+            if (level >= 0) {
+              olCounters[level]++;
+              const num = olCounters[level];
+              if (prefixLevel === 0) {
+                prefix = `${num}. `;
+              } else if (prefixLevel === 1) {
+                prefix = `${String.fromCharCode(96 + ((num - 1) % 26) + 1)}. `;
+              } else {
+                const roman = ["i","ii","iii","iv","v","vi","vii","viii","ix","x"];
+                prefix = `${roman[num - 1] || num}. `;
+              }
+            } else {
+              prefix = "• ";
+            }
+          } else {
+            // Unordered list bullet
+            const bullets = ["•", "◦", "▪", "–"];
+            const bIdx = Math.min(indentLevel, bullets.length - 1);
+            prefix = bullets[bIdx] + " ";
+          }
+
+          // Check if <li> has nested <ol> or <ul> — render direct text then recurse into nested lists only
+          const nestedList = el.querySelector(":scope > ol, :scope > ul");
+          if (nestedList) {
+            // Get direct text (before nested list)
+            let directText = "";
+            el.childNodes.forEach(c => {
+              if (c.nodeType === Node.TEXT_NODE) directText += c.textContent;
+              else if (c.nodeType === Node.ELEMENT_NODE && (c as Element).tagName.toLowerCase() !== "ol" && (c as Element).tagName.toLowerCase() !== "ul") {
+                directText += c.textContent;
+              }
+            });
+            directText = directText.replace(/\s+/g, " ").trim();
+            if (directText) {
+              writeBlock(directText, x, w, { prefix });
+            }
+            // Only recurse into nested <ol>/<ul> children (skip already-rendered text)
+            for (let ci = 0; ci < el.children.length; ci++) {
+              const child = el.children[ci] as HTMLElement;
+              const childTag = child.tagName.toLowerCase();
+              if (childTag === "ol") {
+                const startAttr = child.getAttribute("start");
+                const startVal = startAttr ? parseInt(startAttr) - 1 : 0;
+                const nestedCounters = [...olCounters, startVal];
+                walkNodes(child, indentLevel + 1, nestedCounters);
+              } else if (childTag === "ul") {
+                walkNodes(child, indentLevel + 1, olCounters);
+              }
+            }
+          } else {
+            writeBlock(txt, x, w, { prefix });
+          }
+          curY += 1.5; // inter-item spacing (matches old CSS `li { margin: 3px 0; }`)
+          continue;
+        }
+
+        // Tables
+        if (tag === "table") {
+          curY += 2;
+          const rows = el.querySelectorAll("tr");
+          rows.forEach((row) => {
+            const cells = row.querySelectorAll("td, th");
+            const isHeader = row.querySelector("th") !== null;
+            const colW = contentW / Math.max(cells.length, 1);
+            let rowMaxH = 0;
+            const cellTexts: string[][] = [];
+
+            cells.forEach((cell, ci) => {
+              const txt = (cell.textContent || "").trim();
+              pdf.setFont("times", isHeader ? "bold" : "normal");
+              pdf.setFontSize(10);
+              const lines = pdf.splitTextToSize(txt, colW - 4);
+              cellTexts.push(lines);
+              rowMaxH = Math.max(rowMaxH, lines.length * 4.5 + 3);
+            });
+
+            ensureSpace(rowMaxH);
+
+            // Draw cell borders and text
+            cells.forEach((_, ci) => {
+              const cx = marginSide + ci * colW;
+              pdf.setDrawColor(229, 231, 235);
+              pdf.setLineWidth(0.2);
+              pdf.rect(cx, curY, colW, rowMaxH);
+
+              pdf.setFont("times", isHeader ? "bold" : "normal");
+              pdf.setFontSize(10);
+              pdf.setTextColor(17, 24, 39);
+              cellTexts[ci]?.forEach((line, li) => {
+                pdf.text(line, cx + 2, curY + 4 + li * 4.5);
+              });
+            });
+
+            curY += rowMaxH;
+          });
+          curY += 2;
+          continue;
+        }
+
+        // Generic block elements: recurse
+        if (["div", "section", "article", "main", "span", "strong", "b", "em", "i", "u", "a"].includes(tag)) {
+          walkNodes(el, indentLevel, olCounters);
+          continue;
+        }
+
+        // Horizontal rule
+        if (tag === "hr") {
+          ensureSpace(4);
+          pdf.setDrawColor(200, 200, 200);
+          pdf.setLineWidth(0.3);
+          pdf.line(marginSide, curY, pageW - marginSide, curY);
+          curY += 3;
+          continue;
+        }
+
+        // Line break
+        if (tag === "br") {
+          curY += 3;
+          continue;
+        }
+
+        // Fallback: try to render any text content
+        const fallbackTxt = (el.textContent || "").trim();
+        if (fallbackTxt) {
+          writeBlock(fallbackTxt, marginSide + indentLevel * 8, contentW - indentLevel * 8);
+        }
       }
-
-      const total = totalPages;
-
-      // Load logo once and reuse
-      const logoDataUrl = await fetchAsDataUrl(ALBERTA_LOGO_URL);
-      const logoAspect = logoDataUrl ? await getImageAspect(logoDataUrl) : 3;
-      const logo = logoDataUrl ? { dataUrl: logoDataUrl, aspect: logoAspect } : null;
-
-      for (let i = 1; i <= total; i++) {
-        pdf.setPage(i);
-        drawAlbertaHeader(pdf, i, total, { section: section || "", number: number || "", subject: subject || "" }, logo);
-        drawAlbertaFooter(pdf, "Classification: Protected B");
-      }
-
-      const pdfBlob = pdf.output("blob");
-      if (!pdfBlob || !pdfBlob.size) throw new Error("PDF generation produced an empty blob");
-      return pdfBlob;
-    } finally {
-      document.body.removeChild(iframe);
     }
+
+    // Walk the parsed HTML body
+    walkNodes(container, 0, []);
+
+    const totalPages = pdf.getNumberOfPages();
+
+    // Load logo once and draw headers/footers
+    const logoDataUrl = await fetchAsDataUrl(ALBERTA_LOGO_URL);
+    const logoAspect = logoDataUrl ? await getImageAspect(logoDataUrl) : 3;
+    const logo = logoDataUrl ? { dataUrl: logoDataUrl, aspect: logoAspect } : null;
+
+    for (let i = 1; i <= totalPages; i++) {
+      pdf.setPage(i);
+      drawAlbertaHeader(pdf, i, totalPages, { section: section || "", number: number || "", subject: subject || "" }, logo);
+      const isLastPage = i === totalPages;
+      drawAlbertaFooter(pdf, "Classification: Protected B", isLastPage ? effectiveDate : undefined);
+    }
+
+    const pdfBlob = pdf.output("blob");
+    if (!pdfBlob || !pdfBlob.size) throw new Error("PDF generation produced an empty blob");
+    return pdfBlob;
   };
 
   const handleConvertAndUpload = async () => {
@@ -1022,8 +1504,7 @@ const UploadPolicyDocs = () => {
           file_name: pdfName,
           file_size: pdfBlob.size,
           file_url: publicUrl,
-          published_at: new Date().toISOString(),
-        })
+        } as any)
         .select("id")
         .single();
       
