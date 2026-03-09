@@ -29,34 +29,13 @@ function jsonError(req: Request, status: number, message: string) {
 }
 
 // ---------------------------------------------------------------------------
-// JWT helpers
+// JWT verification
 // ---------------------------------------------------------------------------
-interface JWTPayload {
-  sub?: string;
-  role?: string;
-  exp?: number;
-  email?: string;
-}
-
-/**
- * Decode a Supabase JWT payload without making any network call.
- * We check: valid format, authenticated role (not anon), not expired.
- * The Supabase gateway already verified the apikey header, so we only
- * need to confirm this is a real signed-in user token, not the anon key.
- */
-function decodeJWT(token: string): JWTPayload | null {
-  try {
-    const parts = token.split('.');
-    if (parts.length !== 3) return null;
-
-    // Base64url → Base64 → JSON
-    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-    const padded = base64.padEnd(base64.length + (4 - (base64.length % 4)) % 4, '=');
-    return JSON.parse(atob(padded)) as JWTPayload;
-  } catch {
-    return null;
-  }
-}
+// NOTE: We use supabase.auth.getUser(token) which calls the Supabase Auth
+// service and cryptographically verifies the JWT signature + expiry.
+// This replaces the previous manual base64-decode approach which only
+// inspected claims without verifying authenticity.
+// ASVS 3.5.2 – Verify that signed tokens validate signature before trusting claims.
 
 // ---------------------------------------------------------------------------
 // Types
@@ -199,28 +178,28 @@ Deno.serve(async (req: Request) => {
     return jsonError(req, 405, 'Method not allowed');
   }
 
-  // ── 1. Auth: decode JWT, confirm it's a signed-in user ───────────────────
+  // ── 1. Auth: cryptographically verify the user JWT ───────────────────────
   const authHeader = req.headers.get('Authorization');
   if (!authHeader?.startsWith('Bearer ')) {
     return jsonError(req, 401, 'Missing Authorization header');
   }
   const token = authHeader.slice(7).trim();
 
-  const payload = decodeJWT(token);
-  if (!payload) {
-    return jsonError(req, 401, 'Malformed token');
+  // Initialise a per-request Supabase client using the service role key.
+  // auth.getUser() makes a round-trip to Supabase Auth which verifies the
+  // JWT signature, expiry, and revocation status — far stronger than a
+  // local base64-decode which cannot detect revoked/rotated tokens.
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+  if (authError || !user) {
+    return jsonError(req, 401, 'Invalid or expired session. Please sign in again.');
   }
-  // Reject the anon key and any expired token
-  if (payload.role !== 'authenticated') {
-    return jsonError(req, 401, 'Sign in required');
-  }
-  if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
-    return jsonError(req, 401, 'Session expired. Please sign in again.');
-  }
-  if (!payload.sub) {
-    return jsonError(req, 401, 'Invalid token: missing subject');
-  }
-  const userId = payload.sub;
+  const userId = user.id;
 
   // ── 2. Parse & sanitise body ──────────────────────────────────────────────
   let body: { messages?: unknown };
@@ -247,12 +226,7 @@ Deno.serve(async (req: Request) => {
   }
 
   // ── 3. Fetch live context from DB ─────────────────────────────────────────
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  const supabase = createClient(supabaseUrl, supabaseServiceKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-
+  // Re-use the service-role client created during auth verification above.
   const [profileResult, tasksResult, policiesResult] = await Promise.all([
     supabase
       .from('profiles')
@@ -310,12 +284,11 @@ Deno.serve(async (req: Request) => {
   if (!openAIResponse.ok) {
     const status = openAIResponse.status;
     const errorBody = await openAIResponse.text();
+    // Log internally but never expose the raw OpenAI response body to clients
+    // (it may contain model config, quota details, or internal identifiers).
     console.error(`OpenAI error ${status}:`, errorBody);
     if (status === 429) return jsonError(req, 429, 'Rate limit exceeded. Try again shortly.');
-    return new Response(
-      JSON.stringify({ error: `OpenAI error ${status}`, detail: errorBody }),
-      { status: 500, headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' } }
-    );
+    return jsonError(req, 500, 'AI service temporarily unavailable. Please try again.');
   }
 
   return new Response(openAIResponse.body, {

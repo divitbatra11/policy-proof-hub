@@ -171,8 +171,14 @@ const Auth = () => {
         "Account created! Check your email for a confirmation link before signing in."
       );
     } catch (error: unknown) {
-      const msg = error instanceof Error ? error.message : "Sign up failed";
-      toast.error(msg);
+      // Use a generic message to prevent account enumeration
+      // (e.g. "User already registered" leaks whether the email exists).
+      const msg = error instanceof Error ? error.message : "";
+      const safeMsg =
+        msg.toLowerCase().includes("password")
+          ? "Password does not meet requirements. Please review the rules below."
+          : "Sign up failed. Please check your details and try again.";
+      toast.error(safeMsg);
     } finally {
       setLoading(false);
     }

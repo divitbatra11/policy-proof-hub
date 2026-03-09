@@ -102,8 +102,12 @@ const ChatBot = () => {
         } else if (response.status === 401) {
           toast.error("Session expired. Please sign in again.");
         } else {
-          // Show full detail in dev so the exact OpenAI error is visible
-          toast.error(detail ? `${msg}: ${detail}` : (msg ?? "Failed to get response."));
+          // Never expose internal API error details to the user in production
+          toast.error(
+            import.meta.env.DEV
+              ? (detail ? `${msg}: ${detail}` : (msg ?? "Failed to get response."))
+              : "An error occurred. Please try again."
+          );
         }
         setIsLoading(false);
         return;

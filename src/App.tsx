@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import ChatBot from "@/components/chat/ChatBot";
 import AdminRoute from "@/components/auth/AdminRoute";
+import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
@@ -42,20 +43,22 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/dashboard/policies" element={<Policies />} />
-          <Route path="/dashboard/policies/:id" element={<PolicyDetail />} />
-          <Route path="/dashboard/attestations" element={<PendingAttestations />} />
-          <Route path="/dashboard/groups" element={<Groups />} />
-          <Route path="/dashboard/groups/:id" element={<GroupDetail />} />
-          <Route path="/dashboard/settings" element={<Settings />} />
-          <Route path="/dashboard/tasks" element={<Tasks />} />
-          <Route path="/dashboard/ppdu-brief" element={<PPDUBrief />} />
-          <Route path="/dashboard/ppdu-brief-library" element={<PPDUBriefLibrary />} />
-          <Route path="/dashboard/ppdu-brief-library/:id" element={<PPDUBriefDetail />} />
-          <Route path="/dashboard/project-intake" element={<ProjectIntakeForm />} />
-          <Route path="/dashboard/project-library" element={<ProjectLibrary />} />
-          <Route path="/dashboard/project-library/:id" element={<ProjectDetail />} />
+
+          {/* All /dashboard/* routes require an authenticated session */}
+          <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+          <Route path="/dashboard/policies" element={<ProtectedRoute><Policies /></ProtectedRoute>} />
+          <Route path="/dashboard/policies/:id" element={<ProtectedRoute><PolicyDetail /></ProtectedRoute>} />
+          <Route path="/dashboard/attestations" element={<ProtectedRoute><PendingAttestations /></ProtectedRoute>} />
+          <Route path="/dashboard/groups" element={<ProtectedRoute><Groups /></ProtectedRoute>} />
+          <Route path="/dashboard/groups/:id" element={<ProtectedRoute><GroupDetail /></ProtectedRoute>} />
+          <Route path="/dashboard/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+          <Route path="/dashboard/tasks" element={<ProtectedRoute><Tasks /></ProtectedRoute>} />
+          <Route path="/dashboard/ppdu-brief" element={<ProtectedRoute><PPDUBrief /></ProtectedRoute>} />
+          <Route path="/dashboard/ppdu-brief-library" element={<ProtectedRoute><PPDUBriefLibrary /></ProtectedRoute>} />
+          <Route path="/dashboard/ppdu-brief-library/:id" element={<ProtectedRoute><PPDUBriefDetail /></ProtectedRoute>} />
+          <Route path="/dashboard/project-intake" element={<ProtectedRoute><ProjectIntakeForm /></ProtectedRoute>} />
+          <Route path="/dashboard/project-library" element={<ProtectedRoute><ProjectLibrary /></ProtectedRoute>} />
+          <Route path="/dashboard/project-library/:id" element={<ProtectedRoute><ProjectDetail /></ProtectedRoute>} />
           <Route path="/team" element={<MeetTheTeam />} />
 
           {/* Admin-only utility routes */}

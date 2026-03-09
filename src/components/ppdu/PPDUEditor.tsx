@@ -1,4 +1,5 @@
 import { useRef, useCallback, useEffect, useState } from "react";
+import DOMPurify from "dompurify";
 import { Button } from "@/components/ui/button";
 import {
   Bold,
@@ -257,7 +258,10 @@ const PPDUEditor = ({ content, onContentChange }: PPDUEditorProps) => {
         ""
       );
 
-      editorRef.current.innerHTML = cleanContent;
+      editorRef.current.innerHTML = DOMPurify.sanitize(cleanContent, {
+        USE_PROFILES: { html: true },
+        ADD_ATTR: ["style", "class", "colspan", "rowspan"],
+      });
     }
   }, [content]);
 

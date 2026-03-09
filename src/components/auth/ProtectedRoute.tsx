@@ -2,18 +2,18 @@ import { useEffect, useState, ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 
-interface AdminRouteProps {
+interface ProtectedRouteProps {
   children: ReactNode;
 }
 
 /**
- * Protects routes that should only be accessible to admin users.
- * Redirects unauthenticated users to /auth and non-admins to /dashboard.
+ * Guards any route that requires an authenticated session.
+ * Unauthenticated users are redirected to /auth.
  *
  * ASVS 3.1 – Session Management Fundamentals
  * ASVS 4.1 – General Access Control Design
  */
-const AdminRoute = ({ children }: AdminRouteProps) => {
+const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
@@ -21,8 +21,10 @@ const AdminRoute = ({ children }: AdminRouteProps) => {
   useEffect(() => {
     let mounted = true;
 
-    const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+    const check = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
       if (!mounted) return;
 
@@ -31,27 +33,16 @@ const AdminRoute = ({ children }: AdminRouteProps) => {
         return;
       }
 
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", session.user.id)
-        .single();
-
-      if (!mounted) return;
-
-      if (profile?.role !== "admin") {
-        navigate("/dashboard", { replace: true });
-        return;
-      }
-
       setAuthorized(true);
       setLoading(false);
     };
 
-    checkAuth();
+    check();
 
     // Re-validate whenever auth state changes (e.g. token revoked, sign-out)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!mounted) return;
       if (!session) {
         navigate("/auth", { replace: true });
@@ -77,4 +68,4 @@ const AdminRoute = ({ children }: AdminRouteProps) => {
   return <>{children}</>;
 };
 
-export default AdminRoute;
+export default ProtectedRoute;

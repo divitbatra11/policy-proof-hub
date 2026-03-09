@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { Upload, FileText, CheckCircle, AlertCircle } from "lucide-react";
 import * as mammoth from "mammoth";
+import JSZip from "jszip";
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 import DOMPurify from "dompurify";
@@ -50,7 +51,7 @@ const PDF_BASE_MARGIN_MM = 15;
 const PDF_HEADER_RESERVED_MM = 30; // space at top of every page for the header
 const META_TABLE_WIDTH_MM = 110;
 const META_NARROW_COL_MM = 30;
-const PDF_HEADER_GAP_MM = 8; // extra breathing room below the header on every page
+const PDF_HEADER_GAP_MM = 14; // extra breathing room below the header on every page
 
 
 const isUuid = (s: string) =>
@@ -127,6 +128,84 @@ function ensureBlankLineAfterPolicyStatement(html: string) {
   return html.slice(0, end) + "<p>&nbsp;</p>" + after;
 }
 
+/**
+ * Parse the docx ArrayBuffer's raw OOXML to extract the true nesting level
+ * for each list paragraph, in document order.
+ *
+ * Word docs often encode multi-level lists via DIFFERENT numId values (all
+ * with ilvl=0) rather than increasing ilvl on a single numId.  Mammoth sees
+ * all these as level-0 items and flattens them into one <ol>.
+ *
+ * Strategy: scan all <w:p> blocks; when a new numId appears push it onto a
+ * stack (going one level deeper); when a previously-seen numId reappears pop
+ * back to it.  trueLevel = stackDepth + ilvl.
+ */
+async function computeTrueLevels(arrayBuffer: ArrayBuffer): Promise<number[]> {
+  try {
+    // Clone the buffer so JSZip's read doesn't interfere with mammoth's subsequent read
+    const zip = await JSZip.loadAsync(arrayBuffer.slice(0));
+    const docXmlFile = zip.file("word/document.xml");
+    if (!docXmlFile) {
+      console.warn("[computeTrueLevels] word/document.xml not found in zip");
+      return [];
+    }
+    const docXmlStr = await docXmlFile.async("string");
+
+    const listParaData: { numId: number; ilvl: number }[] = [];
+    const paraRegex = /<w:p[ >]([\s\S]*?)<\/w:p>/g;
+    let pm: RegExpExecArray | null;
+    while ((pm = paraRegex.exec(docXmlStr)) !== null) {
+      const pContent = pm[1];
+      const numIdM = pContent.match(/<w:numId\s[^/]*?w:val="(\d+)"/);
+      if (!numIdM) continue;
+      const numId = parseInt(numIdM[1], 10);
+      if (numId === 0) continue; // numId=0 removes list formatting
+      const ilvlM = pContent.match(/<w:ilvl\s[^/]*?w:val="(\d+)"/);
+      const ilvl = ilvlM ? parseInt(ilvlM[1], 10) : 0;
+      listParaData.push({ numId, ilvl });
+    }
+
+    const numIdStack: number[] = [];
+    const levels = listParaData.map(({ numId, ilvl }) => {
+      const idx = numIdStack.indexOf(numId);
+      if (idx === -1) numIdStack.push(numId);
+      else numIdStack.splice(idx + 1);
+      return (numIdStack.length - 1) + ilvl;
+    });
+    console.log(`[computeTrueLevels] found ${listParaData.length} list paras, levels:`, levels.slice(0, 20));
+    return levels;
+  } catch (err) {
+    console.error("[computeTrueLevels] failed, falling back to Mammoth defaults:", err);
+    return [];
+  }
+}
+
+/**
+ * Build a Mammoth transformDocument callback that replaces each list
+ * paragraph's numbering.level with the pre-computed true level.
+ * Levels are consumed in DFS document order, which matches Mammoth's walk.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function makeListLevelTransform(trueLevels: number[]): (doc: any) => any {
+  let idx = 0;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function transform(el: any): any {
+    if (el.type === "paragraph" && el.numbering) {
+      const newLevel = trueLevels[idx++] ?? (parseInt(String(el.numbering.level), 10) || 0);
+      const oldLevel = parseInt(String(el.numbering.level), 10) || 0;
+      if (newLevel !== oldLevel) {
+        return { ...el, numbering: { ...el.numbering, level: newLevel } };
+      }
+      return el;
+    }
+    if (el.children) {
+      return { ...el, children: el.children.map(transform) };
+    }
+    return el;
+  }
+  return (doc: any) => transform(doc);
+}
+
 function normalizeListTypes(html: string) {
   let out = html;
 
@@ -153,19 +232,273 @@ function applyIndentBasedLists(html: string) {
   return html.replace(
     /<p([^>]*)style="([^"]*)"([^>]*)>(.*?)<\/p>/gi,
     (full, pre, style, post, content) => {
-      const marginMatch = style.match(/margin-left:\s*([\d.]+)(px|pt|in|cm|mm)/i);
+      const marginMatch = style.match(/margin-left:\s*([\d.]+)\s*(px|pt|in|cm|mm)/i);
       if (!marginMatch) return full;
 
-      const value = parseFloat(marginMatch[1]);
+      const val = parseFloat(marginMatch[1]);
+      const unit = marginMatch[2].toLowerCase();
+      // Normalise to px so thresholds work for all unit types
+      let px = val;
+      if (unit === 'pt') px = val * (96 / 72);
+      else if (unit === 'in') px = val * 96;
+      else if (unit === 'mm') px = val * (96 / 25.4);
+      else if (unit === 'cm') px = val * (96 / 2.54);
 
       let level = 0;
-      if (value >= 80) level = 2;
-      else if (value >= 40) level = 1;
+      if (px >= 72) level = 2;
+      else if (px >= 36) level = 1;
 
       return `<p class="policy-li level-${level}">${content}</p>`;
     }
   );
 }
+
+// ─── Flat-list → nested-list pre-processor ───────────────────────────────────
+// Mammoth.js sometimes converts multi-level Word lists into a FLAT <ol>/<ul>
+// where each <li> (or the <ol>/<ul> itself) carries a margin-left style to
+// signal indent depth, instead of properly nesting <ol> inside <li>.
+// These helpers detect that pattern and rebuild true DOM nesting so that
+// walkNodes (and the CSS in wrapWithPolicyTemplate) can rely on element
+// depth rather than fragile pixel-division heuristics.
+
+/** Return an element's margin-left as pixels, honouring pt/in/mm/cm/px. */
+function _mlPx(el: HTMLElement): number {
+  const m = (el.getAttribute('style') || '').match(
+    /margin-left\s*:\s*([\d.]+)\s*(px|pt|mm|cm|in)/i
+  );
+  if (!m) return 0;
+  const v = parseFloat(m[1]);
+  switch (m[2].toLowerCase()) {
+    case 'pt': return v * (96 / 72);
+    case 'in': return v * 96;
+    case 'mm': return v * (96 / 25.4);
+    case 'cm': return v * (96 / 2.54);
+    default:   return v; // px
+  }
+}
+
+/** Remove margin-left from an element's inline style. */
+function _stripML(el: HTMLElement): void {
+  const style = el.getAttribute('style') || '';
+  const cleaned = style
+    .replace(/margin-left\s*:\s*[\d.]+\s*(?:px|pt|mm|cm|in)\s*;?\s*/gi, '')
+    .trim()
+    .replace(/;$/, '');
+  if (cleaned) el.setAttribute('style', cleaned);
+  else el.removeAttribute('style');
+}
+
+/**
+ * Build a nested <ol>/<ul> from a flat array of { level, li } items.
+ * level 0 = top, level 1 = one indent in, etc.
+ */
+function _buildNested(
+  items: { level: number; li: HTMLElement }[],
+  isOl: boolean
+): HTMLElement {
+  const mk = (): HTMLElement => document.createElement(isOl ? 'ol' : 'ul');
+  const root = mk();
+  const stack: { list: HTMLElement; depth: number }[] = [{ list: root, depth: 0 }];
+
+  for (const { level, li } of items) {
+    const newLi = li.cloneNode(true) as HTMLElement;
+    _stripML(newLi);
+
+    // Unwind to the right depth
+    while (stack.length > 1 && stack[stack.length - 1].depth > level) stack.pop();
+
+    const top = stack[stack.length - 1];
+
+    if (level > top.depth) {
+      // Need a deeper list: attach to the last <li> of the current list
+      const parentLi = top.list.lastElementChild as HTMLElement | null;
+      const sub = mk();
+      if (parentLi) parentLi.appendChild(sub);
+      else top.list.appendChild(sub);
+      stack.push({ list: sub, depth: level });
+    }
+
+    stack[stack.length - 1].list.appendChild(newLi);
+  }
+
+  return root;
+}
+
+/**
+ * If `listEl` is a flat list whose direct <li> children carry varying
+ * margin-left values, rebuild it as a properly nested list.
+ */
+function _restructureFlat(listEl: HTMLElement): void {
+  const directLis = Array.from(listEl.children).filter(
+    (c) => c.tagName.toLowerCase() === 'li'
+  ) as HTMLElement[];
+  if (directLis.length < 2) return;
+
+  const listBase = _mlPx(listEl);
+  const pxArr = directLis.map((li) => listBase + _mlPx(li));
+  const min = Math.min(...pxArr);
+  const max = Math.max(...pxArr);
+  if (max - min < 10) return; // all the same level
+
+  // Derive the base indent unit as the smallest gap ≥ 10 px
+  const sorted = [...new Set(pxArr)].sort((a, b) => a - b);
+  let unit = 0;
+  for (let i = 1; i < sorted.length; i++) {
+    const gap = sorted[i] - sorted[i - 1];
+    if (gap >= 10 && (unit === 0 || gap < unit)) unit = gap;
+  }
+  if (unit < 10) unit = 48; // ~36 pt fallback
+
+  const levels = pxArr.map((p) => Math.round((p - min) / unit));
+  const items = directLis.map((li, i) => ({ level: levels[i], li }));
+
+  const isOl = listEl.tagName.toLowerCase() === 'ol';
+  const newList = _buildNested(items, isOl);
+
+  // Copy non-margin attributes (start, type, class, …) to the new root list
+  for (const { name, value } of Array.from(listEl.attributes)) {
+    if (name === 'style') {
+      const c = value
+        .replace(/margin-left\s*:\s*[\d.]+\s*(?:px|pt|mm|cm|in)\s*;?\s*/gi, '')
+        .trim();
+      if (c) newList.setAttribute('style', c);
+    } else {
+      newList.setAttribute(name, value);
+    }
+  }
+
+  listEl.parentNode?.replaceChild(newList, listEl);
+}
+
+/**
+ * Handle consecutive runs of sibling <ol>/<ul> blocks that represent a
+ * multi-level list. Mammoth sometimes emits one <ol> per paragraph, e.g.:
+ *
+ *   <ol><li>1. Main item A</li></ol>           ← margin-left: 0
+ *   <ol><li>2. TYPES NOT ELIGIBLE:</li></ol>   ← margin-left: 0
+ *   <ol style="margin-left:36pt"><li>…</li></ol>  ← sub-item (×10 blocks)
+ *   <ol><li>13. ELIGIBILITY CRITERIA:</li></ol>   ← margin-left: 0
+ *   <ol style="margin-left:36pt"><li>…</li></ol>  ← sub-item (×5 blocks)
+ *
+ * The OLD pair-by-pair approach was buggy: folding item 4 into item 2's
+ * last <li> created a SECOND nested <ol> alongside the one from item 3.
+ *
+ * NEW approach: collect the ENTIRE consecutive run into a flat item list,
+ * compute each item's level from its parent <ol>'s margin-left, then call
+ * _buildNested() once to produce a single correctly-nested <ol>.
+ */
+function _foldSiblings(container: HTMLElement): void {
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const kids = Array.from(container.children) as HTMLElement[];
+
+    let runStart = 0;
+    while (runStart < kids.length) {
+      if (!['ol', 'ul'].includes(kids[runStart].tagName?.toLowerCase())) {
+        runStart++;
+        continue;
+      }
+
+      // Extend the run while siblings are also list elements
+      let runEnd = runStart;
+      while (
+        runEnd + 1 < kids.length &&
+        ['ol', 'ul'].includes(kids[runEnd + 1].tagName?.toLowerCase())
+      ) {
+        runEnd++;
+      }
+
+      if (runEnd > runStart) {
+        // We have 2+ consecutive list siblings — check for margin variation
+        const run = kids.slice(runStart, runEnd + 1);
+        const listMargins = run.map(_mlPx);
+        const minM = Math.min(...listMargins);
+        const maxM = Math.max(...listMargins);
+
+        if (maxM > minM + 10) {
+          // Determine the base indent unit from the smallest non-trivial gap
+          const sortedMs = [...new Set(listMargins)].sort((a, b) => a - b);
+          let unit = 0;
+          for (let j = 1; j < sortedMs.length; j++) {
+            const gap = sortedMs[j] - sortedMs[j - 1];
+            if (gap >= 10 && (unit === 0 || gap < unit)) unit = gap;
+          }
+          if (unit < 10) unit = 48; // ~36 pt fallback
+
+          // Collect ALL <li> elements from the entire run with their levels
+          const allItems: { level: number; li: HTMLElement }[] = [];
+          for (let ri = 0; ri < run.length; ri++) {
+            const listEl = run[ri];
+            const baseLevel = Math.round((listMargins[ri] - minM) / unit);
+            for (const child of Array.from(listEl.children) as HTMLElement[]) {
+              if (child.tagName.toLowerCase() !== 'li') continue;
+              // Also account for margin-left on the <li> itself
+              const liLevel = Math.round(_mlPx(child) / unit);
+              const newLi = child.cloneNode(true) as HTMLElement;
+              _stripML(newLi);
+              allItems.push({ level: baseLevel + liLevel, li: newLi });
+            }
+          }
+
+          // Rebuild as a single properly-nested list
+          const isOl = run[0].tagName.toLowerCase() === 'ol';
+          const newList = _buildNested(allItems, isOl);
+
+          // Copy non-margin attributes from the first list element
+          for (const { name, value } of Array.from(run[0].attributes)) {
+            if (name === 'style') {
+              const c = value
+                .replace(/margin-left\s*:\s*[\d.]+\s*(?:px|pt|mm|cm|in)\s*;?\s*/gi, '')
+                .trim();
+              if (c) newList.setAttribute('style', c);
+            } else {
+              newList.setAttribute(name, value);
+            }
+          }
+
+          // Replace the entire run with the new single nested list
+          container.insertBefore(newList, run[0]);
+          for (const el of run) container.removeChild(el);
+
+          changed = true;
+          break; // DOM changed — restart the outer while loop
+        }
+      }
+
+      runStart = runEnd + 1;
+    }
+
+    if (!changed) {
+      // Recurse into non-list children so nested containers are also processed
+      for (const child of Array.from(container.children) as HTMLElement[]) {
+        if (!['ol', 'ul'].includes(child.tagName?.toLowerCase())) {
+          _foldSiblings(child);
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Main entry point: convert all flat margin-left lists in `html` to properly
+ * nested <ol>/<ul> structures.  Safe to call multiple times (idempotent).
+ */
+function nestFlatLists(html: string): string {
+  const div = document.createElement('div');
+  div.innerHTML = html;
+
+  // Pass A — fix individual flat lists (margin-left on <li>)
+  // Process bottom-up so inner lists are restructured before outer ones
+  const allLists = Array.from(div.querySelectorAll('ol, ul')).reverse();
+  for (const list of allLists) _restructureFlat(list as HTMLElement);
+
+  // Pass B — fold sibling blocks that represent sub-levels (margin-left on <ol>/<ul>)
+  _foldSiblings(div);
+
+  return div.innerHTML;
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Extract the line starting with "Effective Date" from the body HTML.
@@ -574,6 +907,13 @@ function normalizePolicyHtml(html: string) {
   // ✅ keep real <ul>/<ol>/<li> from Mammoth (and normalize ordered list types)
   clean = normalizeListTypes(clean);
 
+  // ✅ Convert flat margin-left lists → proper DOM nesting (handles all Word
+  //    indent patterns: px, pt, in, mm, cm; any base-unit increment)
+  clean = nestFlatLists(clean);
+
+  // ✅ Apply indent-based list classes to <p> elements with margin-left
+  clean = applyIndentBasedLists(clean);
+
   // ✅ Continue <ol> numbering across interruptions (e.g. "Note:" paragraphs)
   clean = continueOlNumbering(clean);
 
@@ -585,7 +925,26 @@ function normalizePolicyHtml(html: string) {
   );
   clean = ensureBlankLineAfterPolicyStatement(clean);
   clean = clean.replace(/<ul>([\s\S]*?)<\/ul>/g, (m) => m.replace(/<p>\s*<\/p>/g, ""));
-  clean = sanitize(clean, { USE_PROFILES: { html: true }, ADD_ATTR: ["start", "style"] });
+  // DOMPurify strips data: URLs from img src by default.
+  // Stash base64 images before sanitization and restore them after.
+  const imgStash: string[] = [];
+  const withPlaceholders = clean.replace(
+    /<img\b[^>]*\bsrc\s*=\s*["']data:[^"']*["'][^>]*\/?>/gi,
+    (match) => {
+      const idx = imgStash.length;
+      imgStash.push(match);
+      return `<img data-stash="${idx}">`;
+    }
+  );
+  let sanitized = sanitize(withPlaceholders, {
+    USE_PROFILES: { html: true },
+    ADD_ATTR: ["start", "style", "data-stash"],
+  });
+  // Restore stashed images
+  sanitized = sanitized.replace(/<img\b[^>]*\bdata-stash="(\d+)"[^>]*\/?>/gi, (_, idx) => {
+    return imgStash[parseInt(idx, 10)] ?? "";
+  });
+  clean = sanitized;
   return clean;
 }
 
@@ -629,7 +988,7 @@ function wrapWithPolicyTemplate(opts: {
       .gov-brand img { height: 16mm; width: auto; display: block; }
 
       .gov-brand .dept {
-        font-size: 11px;
+        font-size: 12px;
         line-height: 1.12;
         color: #0ea5e9;
         font-weight: 500;
@@ -976,9 +1335,14 @@ const UploadPolicyDocs = () => {
       console.log("[UploadPolicyDocs] Reading .docx…");
       const arrayBuffer = await f.arrayBuffer();
 
+      const trueLevels = await computeTrueLevels(arrayBuffer);
+      console.log("[UploadPolicyDocs] trueLevels count:", trueLevels.length, "first 10:", trueLevels.slice(0, 10));
       const { value: html, messages } = await mammoth.convertToHtml(
         { arrayBuffer },
-        { includeDefaultStyleMap: true }
+        {
+          includeDefaultStyleMap: true,
+          transformDocument: makeListLevelTransform(trueLevels),
+        }
       );
       const { value: rawText } = await mammoth.extractRawText({ arrayBuffer });
       const meta = extractPolicyMeta(rawText);
@@ -1008,12 +1372,52 @@ const UploadPolicyDocs = () => {
       mode: "pdf",
     });
 
+  /**
+   * Replace Unicode chars that jsPDF's built-in Times (cp1252) font can't render cleanly.
+   * Leaving them in causes wide letter-spacing / garbled glyphs for the entire text run.
+   */
+  function sanitizePdfText(s: string): string {
+    return s
+      .replace(/\u2192/g, "->")   // →
+      .replace(/\u2190/g, "<-")   // ←
+      .replace(/\u2194/g, "<->")  // ↔
+      .replace(/\u2026/g, "...")  // …
+      .replace(/\u2013/g, "-")    // –
+      .replace(/\u2014/g, "--")   // —
+      .replace(/\u2018/g, "'")    // '
+      .replace(/\u2019/g, "'")    // '
+      .replace(/\u201C/g, '"')    // "
+      .replace(/\u201D/g, '"')    // "
+      .replace(/\u00A0/g, " ")    // non-breaking space
+      // strip any remaining non-cp1252 characters
+      .replace(/[^\x00-\xFF]/g, "?");
+  }
+
   const generatePdfBlob = async (): Promise<Blob> => {
     console.log("[UploadPolicyDocs] Generating PDF…");
 
     // Parse the body HTML into a temporary container to walk the DOM
     const container = document.createElement("div");
     container.innerHTML = docHtml || "<p>(No content parsed)</p>";
+
+    // Pre-load all inline images so we have dimensions when walkNodes encounters them
+    const imgMap = new Map<HTMLImageElement, { dataUrl: string; w: number; h: number }>();
+    await Promise.all(
+      Array.from(container.querySelectorAll("img")).map(
+        (imgEl) =>
+          new Promise<void>((resolve) => {
+            const src = imgEl.getAttribute("src") || "";
+            if (!src) { resolve(); return; }
+            const image = new Image();
+            image.onload = () => {
+              imgMap.set(imgEl, { dataUrl: src, w: image.naturalWidth, h: image.naturalHeight });
+              resolve();
+            };
+            image.onerror = () => resolve();
+            image.src = src;
+          })
+      )
+    );
 
     const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
     const pageW = pdf.internal.pageSize.getWidth();   // 210
@@ -1056,9 +1460,12 @@ const UploadPolicyDocs = () => {
     ) {
       const family = opts.fontFamily ?? "times";
       const style = opts.fontStyle ?? "normal";
-      const size = opts.fontSize ?? 11;
+      const size = opts.fontSize ?? 12;
       const color = opts.textColor ?? [17, 24, 39];
       const lh = opts.lineHeight ?? 5.8;
+
+      // Sanitize before passing to jsPDF — Unicode outside cp1252 causes garbled glyphs
+      text = sanitizePdfText(text);
 
       pdf.setFont(family, style);
       pdf.setFontSize(size);
@@ -1104,8 +1511,38 @@ const UploadPolicyDocs = () => {
         const el = node as HTMLElement;
         const tag = el.tagName.toLowerCase();
 
-        // Skip images (they'd need addImage separately)
-        if (tag === "img") continue;
+        // Inline images
+        if (tag === "img") {
+          const info = imgMap.get(el as HTMLImageElement);
+          console.log("[PDF img]", el.getAttribute("src")?.slice(0, 40), "→ info:", info ? `${info.w}x${info.h}` : "NOT FOUND");
+          if (info && info.w > 0 && info.h > 0) {
+            // Scale image to fit content width (max), maintain aspect ratio
+            const maxImgW = contentW - indentLevel * 8;
+            // 96 DPI matches Word's screen display size (preserves original dimensions).
+            const pxPerMm = 96 / 25.4;
+            let imgWmm = info.w / pxPerMm;
+            let imgHmm = info.h / pxPerMm;
+            if (imgWmm > maxImgW) {
+              imgHmm = imgHmm * (maxImgW / imgWmm);
+              imgWmm = maxImgW;
+            }
+            ensureSpace(imgHmm + 4);
+            const imgX = marginSide + indentLevel * 8;
+            // Detect format from data URL
+            const fmt = info.dataUrl.startsWith("data:image/png") ? "PNG"
+              : info.dataUrl.startsWith("data:image/gif") ? "GIF"
+              : "JPEG";
+            try {
+              // 'NONE' compression prevents jsPDF re-compressing the image as JPEG,
+              // which is the main cause of blurriness in embedded images.
+              pdf.addImage(info.dataUrl, fmt, imgX, curY, imgWmm, imgHmm, undefined, "NONE");
+            } catch {
+              // silently skip unrenderable images
+            }
+            curY += imgHmm + 4;
+          }
+          continue;
+        }
 
         // Headings
         if (/^h[1-6]$/.test(tag)) {
@@ -1131,7 +1568,7 @@ const UploadPolicyDocs = () => {
           } else {
             writeBlock(txt, marginSide, contentW, {
               fontStyle: "bold",
-              fontSize: level === 1 ? 16 : level === 3 ? 12 : 11,
+              fontSize: level === 1 ? 16 : level === 3 ? 12 : 12,
               textColor: [15, 23, 42],
               lineHeight: 6.4,
             });
@@ -1143,8 +1580,17 @@ const UploadPolicyDocs = () => {
         // Paragraphs
         if (tag === "p") {
           const txt = (el.textContent || "").trim();
-          if (!txt) {
-            curY += 3; // blank paragraph = gap (matches old CSS `margin: 8px 0`)
+          const hasImgChild = el.querySelector("img") !== null;
+
+          if (!txt && !hasImgChild) {
+            curY += 3; // truly blank paragraph = gap
+            continue;
+          }
+
+          if (!txt && hasImgChild) {
+            // Image-only paragraph — recurse so the img handler fires
+            walkNodes(el, indentLevel, olCounters);
+            curY += 2;
             continue;
           }
 
@@ -1157,6 +1603,7 @@ const UploadPolicyDocs = () => {
             const w = contentW - (level + 1) * 6;
             const bullets = ["•", "◦", "▪", "–"];
             writeBlock(txt, x, w, { prefix: bullets[level] + " " });
+            if (hasImgChild) walkNodes(el, indentLevel, olCounters);
             continue;
           }
 
@@ -1167,7 +1614,9 @@ const UploadPolicyDocs = () => {
           const x = marginSide + indentLevel * 8;
           const w = contentW - indentLevel * 8;
           writeBlock(txt, x, w, { fontStyle: isBold ? "bold" : "normal" });
-          curY += 3; // paragraph spacing (matches old CSS `p { margin: 8px 0; }`)
+          curY += 3; // paragraph spacing
+          // If the paragraph also contains an image, render it after the text
+          if (hasImgChild) walkNodes(el, indentLevel, olCounters);
           continue;
         }
 
@@ -1211,35 +1660,28 @@ const UploadPolicyDocs = () => {
           const txt = (el.textContent || "").trim();
           if (!txt) continue;
 
-          // Detect effective indent from margin-left style (Mammoth often uses flat <ol> with margin-left)
+          // Primary: use DOM-nesting indentLevel (set by <ol>/<ul> handler above).
+          // nestFlatLists() pre-processing converts flat margin-left lists to proper
+          // DOM nesting, so indentLevel is the authoritative indent for well-formed docs.
+          //
+          // Fallback: if indentLevel is 0 AND the <li> still has a margin-left style
+          // (edge case not caught by pre-processing), compute extra levels from it.
+          // We only apply the fallback at depth 0 to prevent double-counting when
+          // both DOM nesting AND a residual margin-left are present.
           let effectiveIndent = indentLevel;
-          const marginMatch = style.match(/margin-left\s*:\s*([\d.]+)\s*(px|pt|mm|cm|in)/i);
-          if (marginMatch) {
-            const val = parseFloat(marginMatch[1]);
-            const unit = marginMatch[2].toLowerCase();
-            // Convert to approximate indent levels (~36pt or ~48px per level)
-            let px = val;
-            if (unit === "pt") px = val * 1.333;
-            else if (unit === "mm") px = val * 3.78;
-            else if (unit === "cm") px = val * 37.8;
-            else if (unit === "in") px = val * 96;
-            const extraLevels = Math.round(px / 48);
-            effectiveIndent = indentLevel + extraLevels;
-          }
-          // Also check parent <ol>/<ul> for margin-left
-          if (!marginMatch && el.parentElement) {
-            const parentStyle = el.parentElement.getAttribute("style") || "";
-            const parentMarginMatch = parentStyle.match(/margin-left\s*:\s*([\d.]+)\s*(px|pt|mm|cm|in)/i);
-            if (parentMarginMatch) {
-              const val = parseFloat(parentMarginMatch[1]);
-              const unit = parentMarginMatch[2].toLowerCase();
+          if (indentLevel === 0) {
+            // Try <li> style first, then parent <ol>/<ul> style
+            const mlStyle = style || (el.parentElement?.getAttribute("style") ?? "");
+            const marginMatch = mlStyle.match(/margin-left\s*:\s*([\d.]+)\s*(px|pt|mm|cm|in)/i);
+            if (marginMatch) {
+              const val = parseFloat(marginMatch[1]);
+              const unit = marginMatch[2].toLowerCase();
               let px = val;
-              if (unit === "pt") px = val * 1.333;
-              else if (unit === "mm") px = val * 3.78;
-              else if (unit === "cm") px = val * 37.8;
+              if (unit === "pt") px = val * (96 / 72);
+              else if (unit === "mm") px = val * (96 / 25.4);
+              else if (unit === "cm") px = val * (96 / 2.54);
               else if (unit === "in") px = val * 96;
-              const extraLevels = Math.round(px / 48);
-              effectiveIndent = indentLevel + extraLevels;
+              effectiveIndent = Math.round(px / 48);
             }
           }
 
@@ -1247,11 +1689,11 @@ const UploadPolicyDocs = () => {
           const w = contentW - effectiveIndent * 8 - 6;
 
           // Determine prefix based on effective indent level
+          // prefixLevel drives the numbering style: 0 → "1.", 1 → "a.", 2+ → "i."
           let prefix: string;
           if (parentTag === "ol") {
-            // Use the deeper of DOM nesting level or margin-based indent for prefix style
-            const prefixLevel = Math.max(olCounters.length - 1, effectiveIndent);
             const level = olCounters.length - 1;
+            const prefixLevel = level >= 0 ? level : effectiveIndent;
             if (level >= 0) {
               olCounters[level]++;
               const num = olCounters[level];
@@ -1267,10 +1709,9 @@ const UploadPolicyDocs = () => {
               prefix = "• ";
             }
           } else {
-            // Unordered list bullet
+            // Unordered list bullet — cycle through symbols by indent depth
             const bullets = ["•", "◦", "▪", "–"];
-            const bIdx = Math.min(indentLevel, bullets.length - 1);
-            prefix = bullets[bIdx] + " ";
+            prefix = bullets[Math.min(effectiveIndent, bullets.length - 1)] + " ";
           }
 
           // Check if <li> has nested <ol> or <ul> — render direct text then recurse into nested lists only
